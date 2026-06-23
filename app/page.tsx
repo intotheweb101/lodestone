@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
 import { actionListDecks, actionListPublicDecks } from '@/app/actions';
 import Link from 'next/link';
@@ -42,6 +42,7 @@ interface ShopPrice {
 }
 
 function SearchPageInner() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<CardSearchResult[]>([]);
@@ -79,21 +80,9 @@ function SearchPageInner() {
   }
 
   async function selectCard(card: CardSearchResult) {
-    setSelected(card);
-    setQuery(card.name);
     setShowDropdown(false);
-    setPrices(null);
-    setActivePrinting(null);
-    const res = await fetch(`/api/card/${card.oracle_id}/printings`);
-    const data = await res.json() as { options: PrintingOption[] };
-    setPrintings(data.options ?? []);
-    if (data.options?.length > 0) {
-      const defaultPrint = data.options.find(p => p.treatment === 'normal') ?? data.options[0];
-      setActivePrinting(defaultPrint);
-      const finish = defaultPrint.finishes.includes('nonfoil') ? 'nonfoil' : 'foil';
-      setActiveFinish(finish);
-      await loadPrices(defaultPrint, finish);
-    }
+    setQuery(card.name);
+    router.push(`/card/${card.set_code}/${card.collector_number}`);
   }
 
   async function selectSuggestion(name: string) {
