@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data (SQLite DB + Scryfall bulk download — too large for git)
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Claude Code project files
+.claude/

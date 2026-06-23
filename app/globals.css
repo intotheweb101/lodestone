@@ -1,26 +1,182 @@
 @import "tailwindcss";
 
+/* ─── Lodestone Design Tokens ─────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Core backgrounds */
+  --bg:        #07151a;
+  --bg-app:    #0a1e21;
+  --sidebar:   #0b2123;
+
+  /* Surfaces — backward-compatible names */
+  --ground:    #0a1e21;
+  --surface:   #0f2a2c;
+  --surface-2: #14383a;
+  --surface-3: #163436;
+
+  /* Borders */
+  --border:    #1d4441;
+  --border-2:  #214a47;
+
+  /* Accent — gold (Lodestone primary) */
+  --accent:    #e8b14a;
+  --accent-hi: #f4c463;
+  --accent-glow: rgba(232,177,74,0.12);
+
+  /* Gold aliases */
+  --gold:      #e8b14a;
+  --gold-glow: rgba(232,177,74,0.12);
+
+  /* Text */
+  --text:       #eef3f0;
+  --text-muted: #a9c0ba;
+  --text-faint: #6f8a85;
+
+  /* Status */
+  --green:   #54c08a;
+  --red:     #e2645c;
+  --warning: #f0cf5b;
+
+  /* Mana pips — Lodestone palette */
+  --mana-W: #f7efd2;
+  --mana-U: #a9def9;
+  --mana-B: #bcb4ad;
+  --mana-R: #f3a48b;
+  --mana-G: #93c8a6;
+  --mana-C: #c9c3bc;
+
+  /* Type scale */
+  --text-xs:   0.6875rem;
+  --text-sm:   0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.375rem;
+  --text-2xl:  1.75rem;
+  --text-3xl:  2.25rem;
+
+  /* Radius */
+  --radius:    7px;
+  --radius-md: 9px;
+  --radius-lg: 16px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ─── Reset + base ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', -apple-system, system-ui, sans-serif;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-2); }
+
+/* ─── Focus ────────────────────────────────────────────────────────────────── */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ─── Selection ────────────────────────────────────────────────────────────── */
+::selection { background: rgba(232,177,74,0.2); }
+
+/* ─── Lodestone animations ─────────────────────────────────────────────────── */
+@keyframes ls-foil {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes ls-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ─── Sidebar nav item ─────────────────────────────────────────────────────── */
+.ls-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: var(--text-faint);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.ls-nav-item:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* ─── Utilities ────────────────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ─── Primer (deck description, rendered markdown) ─────────────────────────── */
+.primer { line-height: 1.65; color: var(--text); }
+.primer > * + * { margin-top: 0.9em; }
+.primer h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.015em; color: var(--text); }
+.primer h2 { font-size: 1.05rem; font-weight: 600; color: var(--text); }
+.primer h3 { font-size: 0.9375rem; font-weight: 600; color: var(--text-muted); }
+.primer p  { font-size: 0.875rem; color: var(--text); }
+.primer a  { color: var(--accent); text-decoration: none; }
+.primer a:hover { text-decoration: underline; }
+.primer strong { font-weight: 700; }
+.primer em { font-style: italic; color: var(--text-muted); }
+.primer ul, .primer ol { padding-left: 1.5em; font-size: 0.875rem; }
+.primer li + li { margin-top: 0.25em; }
+.primer blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 6px 14px;
+  color: var(--text-faint);
+  font-size: 0.875rem;
+  background: var(--surface-2);
+  border-radius: 0 6px 6px 0;
+}
+.primer code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8125rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.primer pre {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.primer pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+.primer hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25em 0;
 }
