@@ -88,6 +88,14 @@ export default function AdminPage() {
     else { const d = await res.json() as { error?: string }; alert(d.error ?? 'Failed to delete user'); }
   }
 
+  async function resetPassword(id: string, email: string) {
+    if (!confirm(`Reset password for ${email}? A temporary password will be generated.`)) return;
+    const res = await fetch('/api/admin/users', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    const d = await res.json() as { tempPassword?: string; error?: string };
+    if (d.tempPassword) alert(`Temporary password for ${email}:\n\n${d.tempPassword}\n\nAsk them to change it after logging in.`);
+    else alert(d.error ?? 'Failed to reset password');
+  }
+
   async function addShop() {
     if (!newShop.name || !newShop.url) return;
     await fetch('/api/admin/shops', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newShop) });
@@ -278,16 +286,21 @@ export default function AdminPage() {
                   </td>
                   <td style={{ ...cellStyle, color: '#6f8a85', fontSize: '12px', fontFamily: "'IBM Plex Mono',monospace" }}>{new Date(u.created_at).toLocaleDateString('en-NZ')}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
-                    {u.id !== user.id && (
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button onClick={() => toggleRole(u.id, u.role)} style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #214a47', background: 'transparent', color: '#8aa39d', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
-                          {u.role === 'admin' ? 'Demote' : 'Make admin'}
-                        </button>
-                        <button onClick={() => deleteUserById(u.id, u.name)} style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(226,100,92,0.3)', background: 'rgba(226,100,92,0.08)', color: '#e2645c', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
-                          Delete
-                        </button>
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button onClick={() => resetPassword(u.id, u.email)} style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(232,177,74,0.3)', background: 'rgba(232,177,74,0.08)', color: '#e8b14a', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                        Reset password
+                      </button>
+                      {u.id !== user.id && (
+                        <>
+                          <button onClick={() => toggleRole(u.id, u.role)} style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #214a47', background: 'transparent', color: '#8aa39d', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                            {u.role === 'admin' ? 'Demote' : 'Make admin'}
+                          </button>
+                          <button onClick={() => deleteUserById(u.id, u.name)} style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(226,100,92,0.3)', background: 'rgba(226,100,92,0.08)', color: '#e2645c', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

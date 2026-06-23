@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, deleteUser } from '@/lib/auth';
+import { requireAdmin, deleteUser, hashPassword } from '@/lib/auth';
 import { getDb } from '@/lib/db/connection';
 import { runMigrations } from '@/lib/db/migrations';
+import { randomBytes } from 'crypto';
 
 export function GET(req: NextRequest) {
   runMigrations();
@@ -31,6 +32,17 @@ export async function PATCH(req: NextRequest) {
   if (name?.trim()) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), id);
   if (email?.trim()) db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim().toLowerCase(), id);
   return NextResponse.json({ ok: true });
+}
+
+export async function PUT(req: NextRequest) {
+  runMigrations();
+  try { requireAdmin(req); } catch (e: unknown) { const err = e as { message: string; status?: number }; return NextResponse.json({ error: err.message }, { status: err.status ?? 403 }); }
+  const { id } = await req.json() as { id: string };
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+  const tempPassword = randomBytes(5).toString('hex');
+  const hash = await hashPassword(tempPassword);
+  getDb().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
+  return NextResponse.json({ tempPassword });
 }
 
 export async function DELETE(req: NextRequest) {
