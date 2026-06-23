@@ -1,12 +1,67 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Shop } from '@/lib/db/queries';
 import { Btn } from '@/components/ui';
 
 interface SyncResult {
   ok: boolean;
   results: Record<string, unknown>;
+}
+
+interface LogLine { ts: string; msg: string }
+
+function SyncLogPanel() {
+  const [lines, setLines] = useState<LogLine[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let dead = false;
+
+    function connect() {
+      if (dead) return;
+      es = new EventSource(`/api/admin/sync-log?after=${seqRef.current}`);
+      es.onmessage = (e) => {
+        const { seq, lines: newLines } = JSON.parse(e.data) as { seq: number; lines: LogLine[] };
+        if (newLines.length > 0) {
+          seqRef.current = seq;
+          setLines(prev => [...prev.slice(-400), ...newLines]);
+        }
+      };
+      es.onerror = () => { es?.close(); if (!dead) setTimeout(connect, 3000); };
+    }
+    connect();
+    return () => { dead = true; es?.close(); };
+  }, []);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [lines]);
+
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <h2 style={{ fontWeight: 600, fontSize: 'var(--text-base)', margin: 0 }}>Sync log</h2>
+        <button onClick={() => setLines([])} style={{ fontSize: '11px', color: 'var(--text-faint)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+      </div>
+      <div style={{
+        fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', lineHeight: 1.6,
+        background: '#0a1a1c', border: '1px solid #1a3a3c', borderRadius: '6px',
+        padding: '10px 12px', height: '260px', overflowY: 'auto',
+        color: '#8aa39d',
+      }}>
+        {lines.length === 0
+          ? <span style={{ color: 'var(--text-faint)' }}>No activity yet — start a sync above.</span>
+          : lines.map((l, i) => (
+            <div key={i} style={{ color: l.msg.includes('ERROR') ? '#e2645c' : l.msg.includes('done') ? '#54c08a' : '#8aa39d' }}>
+              <span style={{ color: '#4a6660', userSelect: 'none' }}>{l.ts.slice(11, 19)} </span>{l.msg}
+            </div>
+          ))
+        }
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
 }
 
 function AutoSyncSettings() {
@@ -124,6 +179,8 @@ export function SyncPanel({ shops }: { shops: Shop[] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
       <AutoSyncSettings />
+
+      <SyncLogPanel />
 
       <SyncCard
         title="Scryfall card data"

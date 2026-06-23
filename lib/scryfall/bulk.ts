@@ -8,6 +8,7 @@ import { getDb } from '../db/connection';
 import { getBulkDataInfo, getAllSets, ScryfallCardRaw } from './client';
 import { normalizeNameIndex } from '../match/normalize';
 import { registerAlias } from '../match/setAliases';
+import { syncLog } from '../sync-log';
 import https from 'https';
 import http from 'http';
 import { createWriteStream } from 'fs';
@@ -34,7 +35,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
 }
 
 export async function loadSets(): Promise<void> {
-  console.log('[bulk] Loading Scryfall sets...');
+  syncLog('[bulk] Loading Scryfall sets...');
   const sets = await getAllSets();
   const db = getDb();
   const insert = db.prepare(`
@@ -48,7 +49,7 @@ export async function loadSets(): Promise<void> {
     }
   });
   insertAll();
-  console.log(`[bulk] Loaded ${sets.length} sets.`);
+  syncLog(`[bulk] Loaded ${sets.length} sets.`);
 }
 
 // Zero-dependency streaming JSON array parser.
@@ -110,22 +111,22 @@ export async function loadBulkCards(forceDownload = false): Promise<void> {
     const s = await stat(CACHE_PATH);
     const ageHours = (Date.now() - s.mtimeMs) / 1000 / 3600;
     if (ageHours > 20) needDownload = true; // refresh if older than 20h
-    else console.log(`[bulk] Using cached bulk file (${Math.round(ageHours)}h old).`);
+    else syncLog(`[bulk] Using cached bulk file (${Math.round(ageHours)}h old).`);
   } catch {
     needDownload = true;
   }
 
   if (needDownload) {
-    console.log('[bulk] Fetching bulk data manifest...');
+    syncLog('[bulk] Fetching bulk data manifest...');
     const infos = await getBulkDataInfo();
     const defaultCards = infos.find(i => i.type === 'default_cards');
     if (!defaultCards) throw new Error('Could not find default_cards bulk file');
-    console.log(`[bulk] Downloading ${Math.round(defaultCards.size / 1024 / 1024)}MB bulk file...`);
+    syncLog(`[bulk] Downloading ${Math.round(defaultCards.size / 1024 / 1024)}MB bulk file...`);
     await downloadFile(defaultCards.download_uri, CACHE_PATH);
-    console.log('[bulk] Download complete.');
+    syncLog('[bulk] Download complete.');
   }
 
-  console.log('[bulk] Parsing and loading cards into SQLite (streaming)...');
+  syncLog('[bulk] Parsing and loading cards into SQLite (streaming)...');
   const db = getDb();
 
   // Coerce Scryfall's sometimes-non-numeric P/T/loyalty values ('*', '1+*', 'X') to a REAL
@@ -234,10 +235,10 @@ export async function loadBulkCards(forceDownload = false): Promise<void> {
 
   // Rebuild the FTS5 oracle-text index so o: searches are current
   try {
-    console.log('[bulk] Rebuilding FTS index...');
+    syncLog('[bulk] Rebuilding FTS index...');
     db.exec("INSERT INTO scryfall_fts(scryfall_fts) VALUES('rebuild')");
-    console.log('[bulk] FTS index rebuilt.');
+    syncLog('[bulk] FTS index rebuilt.');
   } catch (err) {
-    console.warn('[bulk] FTS rebuild skipped (FTS5 may not be available):', (err as Error).message);
+    syncLog(`[bulk] WARN FTS rebuild skipped: ${(err as Error).message}`);
   }
 }

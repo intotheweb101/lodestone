@@ -6,6 +6,7 @@
 import { getDb } from '../db/connection';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getAllShops, updateShopSyncedAt, type Shop } from '../db/queries';
+import { syncLog } from '../sync-log';
 import type { ShopifyProduct, ShopifyProductsPage } from './types';
 import { parseDialectAProduct } from './parsers/dialectA';
 import { parseDialectBProduct } from './parsers/dialectB';
@@ -159,7 +160,7 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
   const audNzdRate = syncRow?.aud_nzd_rate ?? 1.10;
   const shopCurrency = shop.currency ?? 'NZD';
 
-  console.log(`\n[ingest] Starting shop: ${shop.name} (${shop.base_url}) [Dialect ${shop.dialect}, currency=${shopCurrency}]`);
+  syncLog(`Starting shop: ${shop.name} (${shop.base_url}) [Dialect ${shop.dialect}, currency=${shopCurrency}]`);
 
   const logInsert = db.prepare(`
     INSERT INTO ingest_log (shop_id, started_at) VALUES (?, datetime('now'))
@@ -169,18 +170,18 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
 
   try {
     for (const handle of shop.collection_handles) {
-      console.log(`[ingest]  Collection: ${handle}`);
+      syncLog(`  Collection: ${handle}`);
       let products: ShopifyProduct[];
       try {
         products = await fetchAllProducts(shop.base_url, handle);
       } catch (err) {
         const msg = `Failed to fetch ${handle}: ${err instanceof Error ? err.message : String(err)}`;
-        console.error(`[ingest]  ${msg}`);
+        syncLog(`  ERROR: ${msg}`);
         errors.push(msg);
         continue;
       }
 
-      console.log(`[ingest]  Got ${products.length} products. Parsing...`);
+      syncLog(`  Got ${products.length} products. Parsing...`);
 
       const batchUpsert = db.transaction((batch: ShopifyProduct[]) => {
         let p = 0; let v = 0; let m = 0;
@@ -211,7 +212,7 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
         totalMatched += res.m;
 
         if ((i + 100) % 1000 < 100) {
-          console.log(`[ingest]  Progress: ${totalProducts} products, ${totalVariants} variants, ${totalMatched} matched`);
+          syncLog(`  Progress: ${totalProducts} products, ${totalVariants} variants, ${totalMatched} matched`);
         }
       }
     }
@@ -222,7 +223,7 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
     `).run(totalProducts, totalVariants, totalMatched, errors.length > 0 ? JSON.stringify(errors) : null, logId);
 
     updateShopSyncedAt(shop.id);
-    console.log(`[ingest] ${shop.name}: ${totalProducts} products, ${totalVariants} variants, ${totalMatched} matched (${errors.length} errors)`);
+    syncLog(`${shop.name} done: ${totalProducts} products, ${totalVariants} variants, ${totalMatched} matched (${errors.length} errors)`);
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
