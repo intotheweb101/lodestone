@@ -106,14 +106,13 @@ export function SyncPanel({ shops }: { shops: Shop[] }) {
 
   async function runSync(target: string, shopId?: number) {
     setRunning(true);
-    setStatus(`Starting ${target} sync…`);
+    setStatus(`Sync started — running in background. Check back in a few minutes.`);
     setResults(null);
     try {
       const url = `/api/admin/sync?target=${target}${shopId ? `&shop_id=${shopId}` : ''}`;
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json() as SyncResult;
       setResults(data);
-      setStatus('Sync complete ✓');
     } catch (err) {
       setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

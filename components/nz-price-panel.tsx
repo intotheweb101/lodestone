@@ -17,6 +17,7 @@ interface NzPricePanelProps {
   setCode: string;
   collectorNumber: string;
   finishes: string[];
+  scryfallPrices?: Record<string, string | null>;
 }
 
 const CONF_STYLE: Record<string, { bg: string; border: string; color: string; dot: string }> = {
@@ -26,7 +27,7 @@ const CONF_STYLE: Record<string, { bg: string; border: string; color: string; do
   none:     { bg: 'rgba(226,100,92,0.10)',  border: 'rgba(226,100,92,0.35)', color: '#d07070', dot: '#e2645c' },
 };
 
-export function NzPricePanel({ setCode, collectorNumber, finishes }: NzPricePanelProps) {
+export function NzPricePanel({ setCode, collectorNumber, finishes, scryfallPrices }: NzPricePanelProps) {
   const defaultFinish = finishes.includes('nonfoil') ? 'nonfoil' : finishes[0] ?? 'nonfoil';
   const [finish, setFinish] = useState<string>(defaultFinish);
   const [prices, setPrices] = useState<ShopPrice[] | null>(null);
@@ -84,8 +85,19 @@ export function NzPricePanel({ setCode, collectorNumber, finishes }: NzPricePane
           Checking shops…
         </div>
       ) : !prices || prices.length === 0 ? (
-        <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: '12px' }}>
-          Not stocked at our tracked NZ shops for this printing.
+        <div style={{ padding: '16px', color: 'var(--text-faint)', fontSize: '12px' }}>
+          <div style={{ marginBottom: scryfallPrices ? '10px' : 0 }}>Not stocked at our tracked NZ shops for this printing.</div>
+          {scryfallPrices && (() => {
+            const usdKey = finish === 'foil' ? 'usd_foil' : finish === 'etched' ? 'usd_etched' : 'usd';
+            const usd = scryfallPrices[usdKey] ?? scryfallPrices['usd'];
+            if (!usd) return null;
+            return (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>${usd}</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>USD · TCGPlayer market</span>
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <>

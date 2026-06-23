@@ -216,6 +216,7 @@ export default async function CardPage({ params }: { params: Promise<{ set: stri
             setCode={card.set_code}
             collectorNumber={card.collector_number}
             finishes={card.finishes}
+            scryfallPrices={card.prices}
           />
 
           {/* Wishlist */}
