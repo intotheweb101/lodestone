@@ -1,10 +1,22 @@
 import { runMigrations } from '@/lib/db/migrations';
-import { generateDraftPacks } from '@/lib/draft/simulator';
+import { generateSealedPool } from '@/lib/sealed/packs';
 import { DraftClient } from './draft-client';
 
 export const dynamic = 'force-dynamic';
 
 let migrated = false;
+
+function generateDraftPacks(setCode: string) {
+  const pool = generateSealedPool(setCode, 3);
+  if (!pool || pool.cards.length === 0) return [[], [], []];
+  const cards = pool.cards;
+  const perPack = Math.floor(cards.length / 3);
+  return [
+    cards.slice(0, perPack),
+    cards.slice(perPack, perPack * 2),
+    cards.slice(perPack * 2),
+  ];
+}
 
 export default async function DraftSetPage({ params }: { params: Promise<{ set: string }> }) {
   if (!migrated) { runMigrations(); migrated = true; }

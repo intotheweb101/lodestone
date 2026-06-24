@@ -1,7 +1,18 @@
-import { generateSealedPool } from '../sealed/packs';
-import type { SealedCard } from '../sealed/packs';
+// Pure, client-safe draft state machine — no DB imports.
 
-export type { SealedCard };
+export interface SealedCard {
+  scryfall_id: string;
+  oracle_id: string;
+  name: string;
+  image_url: string | null;
+  mana_cost: string | null;
+  type_line: string | null;
+  rarity: string;
+  color_identity: string[];
+  colors: string[];
+  cmc: number | null;
+  set_code: string;
+}
 
 export interface DraftState {
   picks: SealedCard[];
@@ -10,24 +21,6 @@ export interface DraftState {
   packNum: number;   // 1-based, 1–3
   pickNum: number;   // 1-based within current pack
   done: boolean;
-}
-
-/**
- * Generate 3 draft packs for a set.
- * Reuses generateSealedPool(setCode, 3) then splits into 3 groups of ~15 cards each.
- * Returns an empty array of arrays if the set has insufficient cards.
- */
-export function generateDraftPacks(setCode: string): SealedCard[][] {
-  const pool = generateSealedPool(setCode, 3);
-  if (!pool || pool.cards.length === 0) return [[], [], []];
-
-  const cards = pool.cards;
-  const perPack = Math.floor(cards.length / 3);
-  return [
-    cards.slice(0, perPack),
-    cards.slice(perPack, perPack * 2),
-    cards.slice(perPack * 2),
-  ];
 }
 
 export function initDraft(packs: SealedCard[][]): DraftState {
