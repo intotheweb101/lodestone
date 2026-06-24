@@ -209,52 +209,40 @@ export function PlanechaseClient() {
 
   // ── In-game layout ────────────────────────────────────────────────────────
   const resultColor = lastResult ? DIE_COLORS[lastResult] : 'var(--accent)';
+  const isPhenom = currentCard ? isPhenomenon(currentCard) : false;
+  const accentBorder = isPhenom ? '2px solid #a48fe8' : '2px solid rgba(232,177,74,0.45)';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="pc-game">
 
-      {/* Current plane */}
+      {/* ── Card zone ── */}
       {currentCard && (
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-          {/* Card image */}
-          <div style={{ flexShrink: 0 }}>
+        <div className="pc-card-zone">
+          {/* Image */}
+          <div className="pc-img-wrap">
             {currentCard.image_url ? (
               <img
                 key={currentCard.scryfall_id}
                 src={currentCard.image_url}
                 alt={currentCard.name}
-                style={{
-                  width: 220, borderRadius: 10,
-                  boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
-                  display: 'block',
-                  border: isPhenomenon(currentCard)
-                    ? '2px solid #a48fe8'
-                    : '2px solid rgba(232,177,74,0.4)',
-                  animation: 'fadeSlideIn 0.4s ease',
-                }}
+                className="pc-card-img"
+                style={{ border: accentBorder }}
               />
             ) : (
-              <div style={{
-                width: 220, aspectRatio: '1.4 / 1', borderRadius: 10,
-                background: 'var(--surface)', border: '2px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'var(--text-faint)', fontSize: 12, padding: 12, textAlign: 'center',
-              }}>
+              <div className="pc-card-placeholder">
                 {currentCard.name}
               </div>
             )}
           </div>
 
-          {/* Card info */}
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 10, ...mono, letterSpacing: '1.5px', textTransform: 'uppercase', color: isPhenomenon(currentCard) ? '#a48fe8' : 'var(--accent)', marginBottom: 4 }}>
+          {/* Info panel — beside image on desktop, below on mobile */}
+          <div className="pc-card-info">
+            <div style={{ fontSize: 10, ...mono, letterSpacing: '1.5px', textTransform: 'uppercase', color: isPhenom ? '#a48fe8' : 'var(--accent)', marginBottom: 4 }}>
               {currentCard.type_line}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 10, lineHeight: 1.2 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 10, lineHeight: 1.2 }}>
               {currentCard.name}
             </div>
-
-            {/* Oracle text */}
             <div style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: 8, padding: '10px 14px',
@@ -263,8 +251,7 @@ export function PlanechaseClient() {
             }}>
               {currentCard.oracle_text}
             </div>
-
-            {isPhenomenon(currentCard) && (
+            {isPhenom && (
               <div style={{ marginTop: 8, fontSize: 11, color: '#a48fe8', background: 'rgba(164,143,232,0.08)', borderRadius: 6, padding: '6px 10px' }}>
                 Phenomenon — resolves immediately; planeswalk to the next plane.
               </div>
@@ -273,141 +260,80 @@ export function PlanechaseClient() {
         </div>
       )}
 
-      {/* Die + controls */}
-      <div style={{
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 12, padding: '18px 20px',
-        display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
-      }}>
-        {/* Die face */}
-        <div style={{
-          width: 72, height: 72, borderRadius: 14,
-          background: '#0a1e22',
+      {/* ── Controls bar — sticky on mobile ── */}
+      <div className="pc-controls">
+        {/* Die */}
+        <div className="pc-die" style={{
           border: `2px solid ${phase === 'result' ? resultColor : 'var(--border)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 32, color: phase === 'result' ? resultColor : 'var(--text-faint)',
-          transition: 'border-color 0.15s, color 0.15s',
-          userSelect: 'none',
-          boxShadow: phase === 'result' ? `0 0 16px ${resultColor}44` : 'none',
+          color: phase === 'result' ? resultColor : 'var(--text-faint)',
+          boxShadow: phase === 'result' ? `0 0 14px ${resultColor}44` : 'none',
         }}>
           {phase === 'rolling' ? DIE_ICONS[rollingFace] : (lastResult ? DIE_ICONS[lastResult] : '⬡')}
         </div>
 
-        <div style={{ flex: 1 }}>
+        {/* Result + buttons */}
+        <div style={{ flex: 1, minWidth: 0 }}>
           {/* Result label */}
           {lastResult && phase === 'result' && (
-            <div style={{ fontSize: 14, fontWeight: 700, color: resultColor, marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: resultColor, marginBottom: 4, fontFamily: "'IBM Plex Sans',sans-serif" }}>
               {DIE_LABELS[lastResult]}
-            </div>
-          )}
-          {lastResult === 'blank' && phase === 'result' && (
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>
-              No effect this roll.
-            </div>
-          )}
-          {lastResult === 'chaos' && phase === 'result' && (
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>
-              Trigger the chaos ability of {currentCard?.name}.
-            </div>
-          )}
-          {lastResult === 'planeswalk' && phase === 'result' && (
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>
-              Moving to the next plane…
-            </div>
-          )}
-          {phase === 'playing' && !lastResult && (
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>
-              Roll the planar die — or planeswalk for free on your turn.
+              {lastResult === 'chaos' && <span style={{ fontWeight: 400, color: 'var(--text-faint)', fontSize: 12 }}> — trigger {currentCard?.name}&apos;s chaos ability</span>}
+              {lastResult === 'planeswalk' && <span style={{ fontWeight: 400, color: 'var(--text-faint)', fontSize: 12 }}> — moving…</span>}
             </div>
           )}
 
-          {/* Buttons */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* Planeswalk — primary action */}
+          <div className="pc-btn-row">
+            {/* Planeswalk — primary */}
             <button
+              className="pc-btn-primary"
               onClick={manualPlaneswalk}
               disabled={phase === 'rolling' || phase === 'result'}
-              style={{
-                padding: '10px 22px', borderRadius: 8,
-                background: (phase === 'rolling' || phase === 'result') ? 'var(--surface-2)' : 'var(--accent)',
-                color: (phase === 'rolling' || phase === 'result') ? 'var(--text-faint)' : '#0a1f22',
-                border: 'none', cursor: (phase === 'rolling' || phase === 'result') ? 'default' : 'pointer',
-                fontSize: 14, fontWeight: 700,
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                transition: 'all 0.12s',
-                opacity: (phase === 'rolling' || phase === 'result') ? 0.5 : 1,
-              }}
+              style={{ opacity: (phase === 'rolling' || phase === 'result') ? 0.45 : 1 }}
             >
               ⟡ Planeswalk
             </button>
 
-            {/* Roll die — secondary */}
+            {/* Roll die */}
             <button
+              className="pc-btn-secondary"
               onClick={rollDieAction}
               disabled={phase !== 'playing'}
-              style={{
-                padding: '10px 18px', borderRadius: 8,
-                background: 'var(--surface-2)',
-                color: phase === 'playing' ? 'var(--text-muted)' : 'var(--text-faint)',
-                border: '1px solid var(--border)', cursor: phase === 'playing' ? 'pointer' : 'default',
-                fontSize: 13, fontWeight: 600,
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                transition: 'all 0.12s',
-                opacity: phase === 'playing' ? 1 : 0.4,
-              }}
+              style={{ opacity: phase === 'playing' ? 1 : 0.4 }}
             >
               Roll die
             </button>
 
+            {/* Chaos confirm */}
             {lastResult === 'chaos' && phase === 'result' && (
-              <button
-                onClick={dismissResult}
-                style={{
-                  padding: '10px 16px', borderRadius: 8,
-                  background: 'rgba(224,91,60,0.12)', color: '#e05b3c',
-                  border: '1px solid rgba(224,91,60,0.3)', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600,
-                  fontFamily: "'IBM Plex Sans', sans-serif",
-                }}
-              >
-                Chaos resolved ✓
+              <button className="pc-btn-chaos" onClick={dismissResult}>
+                Chaos ✓
               </button>
             )}
 
-            <button
-              onClick={resetGame}
-              style={{
-                padding: '10px 14px', borderRadius: 8,
-                background: 'transparent', color: 'var(--text-faint)',
-                border: '1px solid var(--border)', cursor: 'pointer',
-                fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif",
-                marginLeft: 4,
-              }}
-            >
-              Reset
-            </button>
+            {/* Reset — small, trailing */}
+            <button className="pc-btn-reset" onClick={resetGame}>Reset</button>
           </div>
 
-          {/* Die legend */}
-          <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {([['blank', '·', '4 faces — no effect'], ['chaos', '⊕', '1 face — chaos ability'], ['planeswalk', '⟡', '1 face — planeswalk']] as const).map(([key, icon, desc]) => (
-              <span key={key} style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono',monospace", display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ color: DIE_COLORS[key] }}>{icon}</span> {desc}
+          {/* Die legend — hidden on small mobile to save space */}
+          <div className="pc-die-legend">
+            {([['blank', '·', '4× blank'], ['chaos', '⊕', '1× chaos'], ['planeswalk', '⟡', '1× walk']] as const).map(([key, icon, desc]) => (
+              <span key={key} style={{ color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{ color: DIE_COLORS[key] }}>{icon}</span>{desc}
               </span>
             ))}
           </div>
         </div>
 
         {/* Deck counter */}
-        <div style={{ textAlign: 'center', minWidth: 60 }}>
-          <div style={{ fontSize: 26, fontWeight: 700, ...mono, color: 'var(--accent)' }}>{remaining.length}</div>
-          <div style={{ fontSize: 10, ...mono, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '1px' }}>planes left</div>
+        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, ...mono, color: 'var(--accent)', lineHeight: 1 }}>{remaining.length}</div>
+          <div style={{ fontSize: 9, ...mono, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '1px', marginTop: 2 }}>left</div>
         </div>
       </div>
 
-      {/* History */}
+      {/* ── Visited planes ── */}
       {history.length > 0 && (
-        <details>
+        <details className="pc-history">
           <summary style={{
             cursor: 'pointer', fontSize: 11, color: 'var(--text-faint)',
             ...mono, textTransform: 'uppercase', letterSpacing: '1px',
@@ -421,16 +347,11 @@ export function PlanechaseClient() {
           </summary>
           <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {history.map((c, i) => (
-              <div key={`${c.scryfall_id}-${i}`} style={{ position: 'relative' }}>
+              <div key={`${c.scryfall_id}-${i}`}>
                 {c.image_url ? (
-                  <img
-                    src={c.image_url}
-                    alt={c.name}
-                    title={c.name}
+                  <img src={c.image_url} alt={c.name} title={c.name} loading="lazy"
                     style={{ width: 72, borderRadius: 5, opacity: 0.55, display: 'block',
-                      border: isPhenomenon(c) ? '1px solid #a48fe840' : '1px solid rgba(232,177,74,0.2)' }}
-                    loading="lazy"
-                  />
+                      border: isPhenomenon(c) ? '1px solid #a48fe840' : '1px solid rgba(232,177,74,0.2)' }} />
                 ) : (
                   <div style={{ width: 72, aspectRatio: '1.4/1', background: 'var(--surface)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: 'var(--text-faint)', padding: 4, textAlign: 'center', opacity: 0.55 }}>
                     {c.name}
@@ -443,8 +364,174 @@ export function PlanechaseClient() {
       )}
 
       <style>{`
+        /* ── Planechase responsive layout ── */
+
+        /* Mobile-first: card fills the screen */
+        .pc-game {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+        }
+        .pc-card-zone {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-bottom: 0;
+        }
+        .pc-img-wrap {
+          width: 100%;
+        }
+        .pc-card-img {
+          width: 100%;
+          max-width: 100%;
+          border-radius: 12px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+          display: block;
+          animation: fadeSlideIn 0.35s ease;
+        }
+        .pc-card-placeholder {
+          width: 100%;
+          aspect-ratio: 1.4 / 1;
+          border-radius: 12px;
+          background: var(--surface);
+          border: 2px solid var(--border);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-faint);
+          font-size: 13px;
+          padding: 16px;
+          text-align: center;
+        }
+        .pc-card-info {
+          padding: 4px 0 8px;
+        }
+
+        /* Controls bar: sticky to bottom of viewport on mobile */
+        .pc-controls {
+          position: sticky;
+          bottom: 0;
+          z-index: 10;
+          background: var(--bg, #07151a);
+          border-top: 1px solid var(--border);
+          padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 8px;
+        }
+        .pc-die {
+          width: 56px;
+          height: 56px;
+          flex-shrink: 0;
+          border-radius: 12px;
+          background: #0a1e22;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 26px;
+          transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+          user-select: none;
+        }
+        .pc-btn-row {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-bottom: 4px;
+        }
+        .pc-btn-primary {
+          padding: 9px 16px;
+          border-radius: 8px;
+          background: var(--accent);
+          color: #0a1f22;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 700;
+          font-family: 'IBM Plex Sans', sans-serif;
+          transition: opacity 0.12s;
+          white-space: nowrap;
+        }
+        .pc-btn-primary:disabled { cursor: default; }
+        .pc-btn-secondary {
+          padding: 9px 14px;
+          border-radius: 8px;
+          background: var(--surface-2);
+          color: var(--text-muted);
+          border: 1px solid var(--border);
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'IBM Plex Sans', sans-serif;
+          transition: opacity 0.12s;
+          white-space: nowrap;
+        }
+        .pc-btn-secondary:disabled { cursor: default; }
+        .pc-btn-chaos {
+          padding: 9px 12px;
+          border-radius: 8px;
+          background: rgba(224,91,60,0.12);
+          color: #e05b3c;
+          border: 1px solid rgba(224,91,60,0.3);
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'IBM Plex Sans', sans-serif;
+          white-space: nowrap;
+        }
+        .pc-btn-reset {
+          padding: 9px 10px;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--text-faint);
+          border: 1px solid var(--border);
+          cursor: pointer;
+          font-size: 11px;
+          font-family: 'IBM Plex Sans', sans-serif;
+        }
+        .pc-die-legend {
+          display: none;
+        }
+        .pc-history {
+          margin-top: 8px;
+        }
+
+        /* ── Desktop (≥640px): side-by-side card + info, controls inline ── */
+        @media (min-width: 640px) {
+          .pc-game { gap: 20px; }
+          .pc-card-zone {
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 0;
+          }
+          .pc-img-wrap { width: 260px; flex-shrink: 0; }
+          .pc-card-img { width: 260px; border-radius: 10px; }
+          .pc-card-placeholder { width: 260px; }
+          .pc-card-info { flex: 1; padding: 0; }
+          .pc-controls {
+            position: static;
+            border-top: none;
+            padding: 16px 18px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-top: 0;
+          }
+          .pc-die { width: 64px; height: 64px; font-size: 30px; }
+          .pc-btn-primary { font-size: 14px; padding: 10px 20px; }
+          .pc-die-legend {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+          }
+          .pc-history { margin-top: 0; }
+        }
+
         @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(8px); }
+          from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
