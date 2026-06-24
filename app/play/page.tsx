@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { LifeCounter } from './life-counter';
+import { PlayLayout } from './play-layout';
 
 export const metadata: Metadata = {
-  title: 'Life Counter — Lodestone',
-  description: 'MTG life counter with commander damage and poison tracking for 2–6 players.',
+  title: 'Play — Lodestone',
+  description: 'Life counter and Planechase for Magic: The Gathering.',
 };
 
 export default function PlayPage() {
-  return <LifeCounter />;
+  return <PlayLayout />;
 }
