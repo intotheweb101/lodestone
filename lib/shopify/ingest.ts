@@ -30,7 +30,7 @@ async function fetchPage(url: string): Promise<ShopifyProduct[]> {
 
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get('Retry-After') ?? '5', 10);
-    console.warn(`[ingest] Rate-limited. Waiting ${retryAfter}s...`);
+    syncLog(`Rate-limited by ${url}. Waiting ${retryAfter}s...`);
     await sleep(retryAfter * 1000);
     return fetchPage(url);
   }
@@ -43,24 +43,18 @@ async function fetchPage(url: string): Promise<ShopifyProduct[]> {
   return data.products ?? [];
 }
 
-async function fetchAllProducts(baseUrl: string, collectionHandle: string): Promise<ShopifyProduct[]> {
-  const all: ShopifyProduct[] = [];
+// Async generator: yields one page at a time so callers can write-per-page.
+// Avoids accumulating the entire catalog in memory before any DB write.
+async function* streamPages(baseUrl: string, collectionHandle: string): AsyncGenerator<ShopifyProduct[]> {
   let page = 1;
-
   while (page <= MAX_PAGES) {
     const url = `${baseUrl}/collections/${collectionHandle}/products.json?limit=250&page=${page}`;
-    console.log(`[ingest]   Fetching page ${page}: ${url}`);
-
     const products = await fetchPage(url);
     if (products.length === 0) break;
-
-    all.push(...products);
+    yield products;
     page++;
-
     if (products.length < 250) break; // last page
   }
-
-  return all;
 }
 
 // Prepared once per process (not per call) — captured on first upsertParsedProduct call
@@ -168,52 +162,63 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
   const logResult = logInsert.run(shop.id);
   const logId = logResult.lastInsertRowid;
 
+  // Batch upsert: each page is written in its own transaction immediately after fetch.
+  // This makes progress durable — a kill after page N keeps pages 1..N-1.
+  const writePage = db.transaction((products: ShopifyProduct[]) => {
+    let p = 0; let v = 0; let m = 0;
+    for (const product of products) {
+      let parsed: ParsedProduct;
+      try {
+        if (shop.dialect === 'A') {
+          parsed = parseDialectAProduct(product, shop.base_url, shopCurrency, audNzdRate);
+        } else {
+          parsed = parseDialectBProduct(product, shop.base_url, shopCurrency, audNzdRate);
+        }
+      } catch (err) {
+        errors.push(`Parse error on ${product.handle}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      const res = upsertParsedProduct(db, shop.id, parsed);
+      p += res.products; v += res.variants; m += res.matched;
+    }
+    return { p, v, m };
+  });
+
   try {
     for (const handle of shop.collection_handles) {
       syncLog(`  Collection: ${handle}`);
-      let products: ShopifyProduct[];
+      let pageNum = 0;
+      let collectionProducts = 0;
+
       try {
-        products = await fetchAllProducts(shop.base_url, handle);
+        for await (const pageProducts of streamPages(shop.base_url, handle)) {
+          pageNum++;
+          const res = writePage(pageProducts);
+          totalProducts += res.p;
+          totalVariants += res.v;
+          totalMatched += res.m;
+          collectionProducts += pageProducts.length;
+
+          if (pageNum % 5 === 0) {
+            syncLog(`  Page ${pageNum}: ${totalProducts} products, ${totalVariants} variants so far`);
+            // Checkpoint: update ingest_log mid-run so a kill shows partial progress
+            db.prepare('UPDATE ingest_log SET products = ?, variants = ?, matched = ? WHERE id = ?')
+              .run(totalProducts, totalVariants, totalMatched, logId);
+          }
+        }
       } catch (err) {
-        const msg = `Failed to fetch ${handle}: ${err instanceof Error ? err.message : String(err)}`;
+        const msg = `Failed fetching ${handle}: ${err instanceof Error ? err.message : String(err)}`;
         syncLog(`  ERROR: ${msg}`);
         errors.push(msg);
         continue;
       }
 
-      syncLog(`  Got ${products.length} products. Parsing...`);
-
-      const batchUpsert = db.transaction((batch: ShopifyProduct[]) => {
-        let p = 0; let v = 0; let m = 0;
-        for (const product of batch) {
-          let parsed: ParsedProduct;
-          try {
-            if (shop.dialect === 'A') {
-              parsed = parseDialectAProduct(product, shop.base_url, shopCurrency, audNzdRate);
-            } else {
-              parsed = parseDialectBProduct(product, shop.base_url, shopCurrency, audNzdRate);
-            }
-          } catch (err) {
-            errors.push(`Parse error on ${product.handle}: ${err instanceof Error ? err.message : String(err)}`);
-            continue;
-          }
-          const res = upsertParsedProduct(db, shop.id, parsed);
-          p += res.products; v += res.variants; m += res.matched;
-        }
-        return { p, v, m };
-      });
-
-      // Process in batches of 100 for transaction efficiency
-      for (let i = 0; i < products.length; i += 100) {
-        const batch = products.slice(i, i + 100);
-        const res = batchUpsert(batch);
-        totalProducts += res.p;
-        totalVariants += res.v;
-        totalMatched += res.m;
-
-        if ((i + 100) % 1000 < 100) {
-          syncLog(`  Progress: ${totalProducts} products, ${totalVariants} variants, ${totalMatched} matched`);
-        }
+      if (collectionProducts === 0) {
+        const msg = `WARNING: collection "${handle}" on ${shop.name} returned 0 products — handle may be wrong`;
+        syncLog(`  ${msg}`);
+        errors.push(msg);
+      } else {
+        syncLog(`  Collection ${handle}: ${collectionProducts} products (${pageNum} pages)`);
       }
     }
 
@@ -231,7 +236,7 @@ export async function ingestShop(shop: Shop): Promise<{ products: number; varian
     db.prepare(`
       UPDATE ingest_log SET finished_at = datetime('now'), errors = ? WHERE id = ?
     `).run(JSON.stringify(errors), logId);
-    console.error(`[ingest] Fatal error for ${shop.name}: ${msg}`);
+    syncLog(`FATAL error for ${shop.name}: ${msg}`);
   }
 
   return { products: totalProducts, variants: totalVariants, matched: totalMatched, errors };
@@ -242,5 +247,5 @@ export async function ingestAllShops(): Promise<void> {
   for (const shop of shops) {
     await ingestShop(shop);
   }
-  console.log('\n[ingest] All shops complete.');
+  syncLog('All shops complete.');
 }

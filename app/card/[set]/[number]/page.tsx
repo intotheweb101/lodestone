@@ -140,11 +140,38 @@ function PriceVariants({ prices }: { prices: Record<string, string | null> }) {
       {entries.map(({ label, key }) => (
         <div key={key} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '7px', padding: '6px 10px', minWidth: '80px' }}>
           <div style={{ fontSize: '9px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '2px' }}>{label}</div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>${prices[key]}</div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>
+            {key.startsWith('eur') ? '€' : key === 'tix' ? '' : '$'}{prices[key]}{key === 'tix' ? ' tix' : ''}
+          </div>
         </div>
       ))}
     </div>
   );
+}
+
+// ─── Metadata ─────────────────────────────────────────────────────────────────
+
+export async function generateMetadata({ params }: { params: Promise<{ set: string; number: string }> }) {
+  const { set, number } = await params;
+  const card = getScryfallCardBySetNumber(set, number);
+  if (!card) return { title: 'Card not found — Lodestone' };
+  const image = card.image_uris?.normal ?? card.image_uris?.small ?? null;
+  const title = `${card.name} (${set.toUpperCase()} #${number})`;
+  const description = card.type_line
+    ? `${card.type_line}${card.oracle_text ? ' — ' + card.oracle_text.slice(0, 100) : ''}`
+    : `Magic: The Gathering card on Lodestone`;
+  return {
+    title: `${title} — Lodestone`,
+    description: description.slice(0, 155),
+    openGraph: {
+      title,
+      description: description.slice(0, 155),
+      images: image ? [{ url: image, width: 488, height: 680, alt: card.name }] : [],
+      type: 'article',
+      siteName: 'Lodestone',
+    },
+    twitter: { card: image ? 'summary_large_image' : 'summary', title, description: description.slice(0, 155) },
+  };
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -189,7 +216,7 @@ export default async function CardPage({ params }: { params: Promise<{ set: stri
       </div>
 
       {/* Main two-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '36px', alignItems: 'start' }}>
+      <div className="card-detail-grid" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '36px', alignItems: 'start' }}>
 
         {/* ── Left: image(s) + NZ price ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

@@ -15,8 +15,32 @@ import { mainboardEntries, boardEntries, isLegal } from '@/lib/deck/model';
 import { LegalityBadge } from '@/components/legality-badge';
 import { renderMarkdown } from '@/lib/markdown/render';
 import { checkLegalityWithCards } from '@/lib/deck/legality';
+import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const deck = getDeckBySlug(slug);
+  if (!deck) return { title: 'Deck not found — Lodestone' };
+  const title = deck.commander
+    ? `${deck.name} — ${deck.commander} · ${deck.format}`
+    : `${deck.name} · ${deck.format}`;
+  const description = deck.description
+    ? deck.description.slice(0, 140).replace(/[#*`]/g, '') + (deck.description.length > 140 ? '…' : '')
+    : `${deck.format} deck with ${deck.entries?.length ?? 0} cards on Lodestone.`;
+  return {
+    title: `${title} — Lodestone`,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+      siteName: 'Lodestone',
+    },
+    twitter: { card: 'summary', title, description },
+  };
+}
 
 interface EntryWithType extends DeckEntry {
   type_line: string | null;

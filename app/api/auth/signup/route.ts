@@ -3,9 +3,13 @@ import { randomBytes } from 'crypto';
 import { hashPassword, createUser, getUserByEmail, createSession } from '@/lib/auth';
 import { runMigrations } from '@/lib/db/migrations';
 import { getDb } from '@/lib/db/connection';
+import { checkRateLimit, getClientIp } from '@/lib/auth/rate-limit';
 
 export async function POST(req: NextRequest) {
   runMigrations();
+  const ip = getClientIp(req);
+  const { limited } = checkRateLimit(`signup:${ip}`);
+  if (limited) return NextResponse.json({ error: 'Too many attempts. Try again in 15 minutes.' }, { status: 429 });
   const { email, name, password } = await req.json() as { email: string; name: string; password: string };
   if (!email || !name || !password) return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   if (password.length < 8) return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });

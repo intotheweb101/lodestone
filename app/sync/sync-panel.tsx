@@ -67,16 +67,18 @@ function SyncLogPanel() {
 function AutoSyncSettings() {
   const [enabled, setEnabled] = useState(false);
   const [intervalHours, setIntervalHours] = useState(24);
+  const [audNzdRate, setAudNzdRate] = useState('1.10');
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch('/api/sync-settings')
       .then(r => r.json())
-      .then((d: { auto_sync_enabled: number; sync_interval_hours: number; last_auto_sync_at: string | null }) => {
+      .then((d: { auto_sync_enabled: number; sync_interval_hours: number; last_auto_sync_at: string | null; aud_nzd_rate: number | null }) => {
         setEnabled(!!d.auto_sync_enabled);
         setIntervalHours(d.sync_interval_hours ?? 24);
         setLastSync(d.last_auto_sync_at);
+        setAudNzdRate(String(d.aud_nzd_rate ?? 1.10));
       })
       .catch(() => {});
   }, []);
@@ -90,6 +92,16 @@ function AutoSyncSettings() {
         body: JSON.stringify({ auto_sync_enabled: newEnabled, sync_interval_hours: newInterval }),
       });
     } finally { setSaving(false); }
+  }
+
+  async function saveRate() {
+    const rate = parseFloat(audNzdRate);
+    if (!rate || rate <= 0) return;
+    await fetch('/api/sync-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aud_nzd_rate: rate }),
+    });
   }
 
   return (
@@ -147,6 +159,22 @@ function AutoSyncSettings() {
           Last auto sync: {new Date(lastSync).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0.5rem' }}>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>AUD → NZD rate</span>
+        <input
+          type="number" step="0.01" min="0.5" max="3"
+          value={audNzdRate}
+          onChange={e => setAudNzdRate(e.target.value)}
+          onBlur={saveRate}
+          style={{
+            width: '72px', padding: '3px 6px', borderRadius: '6px',
+            border: '1px solid var(--border)', background: 'var(--surface-2)',
+            color: 'var(--text)', fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px',
+          }}
+        />
+        <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>Applied on next AUS shop sync</span>
+      </div>
     </div>
   );
 }

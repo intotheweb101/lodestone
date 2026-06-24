@@ -386,7 +386,7 @@ function SearchPageInner() {
         </div>
       ) : (
         /* Card detail (Screen 2) */
-        <div style={{ flex: 1, padding: '30px 36px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: '36px', alignItems: 'start', overflowY: 'auto' }}>
+        <div className="card-detail-grid" style={{ flex: 1, padding: '30px 36px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: '36px', alignItems: 'start', overflowY: 'auto' }}>
 
           {/* LEFT: image + finish + add */}
           <div>

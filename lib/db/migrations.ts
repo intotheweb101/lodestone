@@ -568,6 +568,14 @@ export function runMigrations(): void {
     ON price_history(match_key, shop_id, finish, date(captured_at));
   `);
 
+  // Fix Card Merchant Christchurch handle — was 'mtg-singles-instock' (returns empty), correct is 'mtg-singles'
+  // seedShops uses INSERT OR IGNORE so config changes don't auto-propagate; this one-time UPDATE does.
+  db.prepare(`
+    UPDATE shops SET collection_handles = '["mtg-singles"]'
+    WHERE base_url = 'https://cardmerchantchristchurch.co.nz'
+    AND collection_handles = '["mtg-singles-instock"]'
+  `).run();
+
   // Remove defunct/non-Shopify shops from existing DBs (idempotent — no-op if already gone)
   const deadUrls = [
     'https://vagabond.co.nz',

@@ -552,7 +552,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
 
       {/* Tab: Decklist */}
       {tab === 'list' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: '1.5rem', alignItems: 'start' }}>
+        <div className="deck-builder-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: '1.5rem', alignItems: 'start' }}>
           <div>
             {/* List toolbar */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
@@ -1628,7 +1628,7 @@ function CardDetailPanel({ scryfallId, name, onClose }: { scryfallId: string; na
       {/* Backdrop */}
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 100 }} />
       {/* Panel */}
-      <div style={{
+      <div className="deck-panel-fixed" style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px',
         background: 'var(--bg)', borderLeft: '1px solid var(--border)',
         zIndex: 101, overflowY: 'auto', padding: '20px',
@@ -1875,7 +1875,7 @@ function EditCardPanel({
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 100 }} />
-      <div style={{
+      <div className="deck-panel-fixed" style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: '420px',
         background: '#0d2426', borderLeft: '1px solid #1d4441',
         zIndex: 101, overflowY: 'auto', padding: '20px',

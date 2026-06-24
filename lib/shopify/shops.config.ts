@@ -39,7 +39,7 @@ export const SHOPS: ShopConfig[] = [
     name: 'Card Merchant Christchurch',
     base_url: 'https://cardmerchantchristchurch.co.nz',
     dialect: 'B',
-    collection_handles: ['mtg-singles-instock'],
+    collection_handles: ['mtg-singles'],
     region: 'NZ',
     enabled: true,
   },

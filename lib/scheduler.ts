@@ -28,10 +28,10 @@ export function startScheduler() {
       if (now - lastSync < intervalMs) return;
 
       console.log('[Lodestone scheduler] Auto-sync triggered');
-      db.prepare("UPDATE sync_settings SET last_auto_sync_at = datetime('now') WHERE id = 1").run();
-
       const { ingestAllShops } = await import('@/lib/shopify/ingest');
       await ingestAllShops();
+      // Stamp AFTER success so a failed sync retries on the next check interval
+      db.prepare("UPDATE sync_settings SET last_auto_sync_at = datetime('now') WHERE id = 1").run();
       console.log('[Lodestone scheduler] Auto-sync complete');
     } catch (err) {
       console.error('[Lodestone scheduler] Error:', err);

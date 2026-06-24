@@ -180,3 +180,40 @@ body {
   border-top: 1px solid var(--border);
   margin: 1.25em 0;
 }
+
+/* ─── Responsive / Mobile ────────────────────────────────────────────────── */
+
+/* Desktop: show sidebar, hide mobile chrome */
+.sidebar-desktop { display: flex !important; }
+.mobile-topbar   { display: none !important; }
+.mobile-drawer   { display: flex !important; }
+
+@media (max-width: 768px) {
+  /* Hide desktop sidebar, show mobile top bar */
+  .sidebar-desktop { display: none !important; }
+  .mobile-topbar   { display: flex !important; }
+
+  /* Stack body vertically so topbar + main flow column */
+  body { flex-direction: column !important; }
+
+  /* Card grids: collapse 300px fixed column */
+  .card-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Deck builder: collapse right panel */
+  .deck-builder-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Fixed drawers (search/price panels in deck builder) become full-width bottom sheets */
+  .deck-panel-fixed {
+    width: 100% !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 80dvh !important;
+  }
+}

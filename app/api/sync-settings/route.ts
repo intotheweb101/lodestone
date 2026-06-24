@@ -7,26 +7,30 @@ interface SyncSettings {
   auto_sync_enabled: number;
   sync_interval_hours: number;
   last_auto_sync_at: string | null;
+  aud_nzd_rate: number | null;
 }
 
 export function GET(req: NextRequest) {
   runMigrations();
   try { requireAdmin(req); } catch (e: unknown) { const err = e as { message: string; status?: number }; return NextResponse.json({ error: err.message }, { status: err.status ?? 403 }); }
   const db = getDb();
-  const row = db.prepare('SELECT auto_sync_enabled, sync_interval_hours, last_auto_sync_at FROM sync_settings WHERE id = 1').get() as SyncSettings;
-  return NextResponse.json(row ?? { auto_sync_enabled: 0, sync_interval_hours: 24, last_auto_sync_at: null });
+  const row = db.prepare('SELECT auto_sync_enabled, sync_interval_hours, last_auto_sync_at, aud_nzd_rate FROM sync_settings WHERE id = 1').get() as SyncSettings;
+  return NextResponse.json(row ?? { auto_sync_enabled: 0, sync_interval_hours: 24, last_auto_sync_at: null, aud_nzd_rate: 1.10 });
 }
 
 export async function POST(req: NextRequest) {
   runMigrations();
   try { requireAdmin(req); } catch (e: unknown) { const err = e as { message: string; status?: number }; return NextResponse.json({ error: err.message }, { status: err.status ?? 403 }); }
   const db = getDb();
-  const { auto_sync_enabled, sync_interval_hours } = await req.json() as { auto_sync_enabled?: boolean; sync_interval_hours?: number };
+  const { auto_sync_enabled, sync_interval_hours, aud_nzd_rate } = await req.json() as { auto_sync_enabled?: boolean; sync_interval_hours?: number; aud_nzd_rate?: number };
   if (typeof auto_sync_enabled === 'boolean') {
     db.prepare('UPDATE sync_settings SET auto_sync_enabled = ? WHERE id = 1').run(auto_sync_enabled ? 1 : 0);
   }
   if (typeof sync_interval_hours === 'number' && sync_interval_hours > 0) {
     db.prepare('UPDATE sync_settings SET sync_interval_hours = ? WHERE id = 1').run(sync_interval_hours);
+  }
+  if (typeof aud_nzd_rate === 'number' && aud_nzd_rate > 0) {
+    db.prepare('UPDATE sync_settings SET aud_nzd_rate = ? WHERE id = 1').run(aud_nzd_rate);
   }
   return NextResponse.json({ ok: true });
 }

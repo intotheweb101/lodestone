@@ -1,13 +1,18 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
-import { AuthCorner } from '@/components/auth-corner';
 import { NavLinks } from '@/components/nav-links';
 import { NotificationBellServer } from '@/components/notification-bell-server';
+import { MobileSidebar } from '@/components/mobile-sidebar';
 
 export const metadata: Metadata = {
   title: 'Lodestone — MTG Deck Builder & NZ Price Finder',
   description: 'Build Magic: The Gathering decks and compare card prices across New Zealand retailers.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +28,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body style={{ display: 'flex', minHeight: '100dvh', background: 'var(--bg)' }}>
         <AuthProvider>
-          <Sidebar />
+          {/* Desktop sidebar — hidden on mobile via CSS class */}
+          <aside className="sidebar-desktop" style={{
+            width: '210px',
+            flexShrink: 0,
+            background: 'var(--sidebar)',
+            borderRight: '1px solid #173a38',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '0',
+            position: 'sticky',
+            top: 0,
+            height: '100dvh',
+            zIndex: 50,
+            overflowY: 'auto',
+          }}>
+            <SidebarContents />
+          </aside>
+
+          {/* Mobile: top bar + slide-in drawer */}
+          <MobileSidebar>
+            <SidebarContents />
+          </MobileSidebar>
+
           <main style={{ flex: 1, minWidth: 0 }}>
             {children}
           </main>
@@ -33,22 +60,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 
-function Sidebar() {
+function SidebarContents() {
   return (
-    <aside style={{
-      width: '210px',
-      flexShrink: 0,
-      background: 'var(--sidebar)',
-      borderRight: '1px solid #173a38',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '0',
-      position: 'sticky',
-      top: 0,
-      height: '100dvh',
-      zIndex: 50,
-      overflowY: 'auto',
-    }}>
+    <>
       {/* Logo + wordmark */}
       <a href="/" style={{
         display: 'flex', alignItems: 'center', gap: '10px',
@@ -67,7 +81,7 @@ function Sidebar() {
         </div>
       </a>
 
-      {/* Main nav — labeled, sectioned, active-route highlighting (client) */}
+      {/* Main nav */}
       <div style={{ flex: 1, padding: '6px 8px', overflowY: 'auto' }}>
         <NavLinks />
       </div>
@@ -91,8 +105,7 @@ function Sidebar() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <NotificationBellServer />
         </div>
-        <AuthCorner />
       </div>
-    </aside>
+    </>
   );
 }

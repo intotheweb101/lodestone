@@ -5,7 +5,12 @@ import { runMigrations } from '@/lib/db/migrations';
 export async function GET(req: NextRequest) {
   runMigrations();
   const code = req.nextUrl.searchParams.get('code');
+  const returnedState = req.nextUrl.searchParams.get('state');
+  const expectedState = req.cookies.get('oauth_state')?.value;
   if (!code) return NextResponse.redirect(new URL('/login?error=no_code', req.url));
+  if (!returnedState || !expectedState || returnedState !== expectedState) {
+    return NextResponse.redirect(new URL('/login?error=invalid_state', req.url));
+  }
   const clientId = process.env.GOOGLE_CLIENT_ID!;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? new URL('/api/auth/google/callback', req.url).toString();
@@ -24,6 +29,7 @@ export async function GET(req: NextRequest) {
     const token = createSession(user.id);
     const res = NextResponse.redirect(new URL('/', req.url));
     res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax' });
+    res.cookies.delete('oauth_state');
     return res;
   } catch {
     return NextResponse.redirect(new URL('/login?error=google_failed', req.url));
