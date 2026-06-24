@@ -125,7 +125,13 @@ export function PlanechaseClient() {
         setLastResult(result);
         setPhase('result');
 
-        if (result === 'planeswalk' && currentCard) {
+        if (result === 'blank') {
+          // Auto-dismiss blank — no interaction needed
+          setTimeout(() => {
+            setPhase('playing');
+            setLastResult(null);
+          }, 1400);
+        } else if (result === 'planeswalk' && currentCard) {
           setTimeout(() => {
             doPlaneswalk(currentCard, remaining);
             setPhase('playing');
@@ -316,45 +322,52 @@ export function PlanechaseClient() {
           )}
 
           {/* Buttons */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Planeswalk — primary action */}
+            <button
+              onClick={manualPlaneswalk}
+              disabled={phase === 'rolling' || phase === 'result'}
+              style={{
+                padding: '10px 22px', borderRadius: 8,
+                background: (phase === 'rolling' || phase === 'result') ? 'var(--surface-2)' : 'var(--accent)',
+                color: (phase === 'rolling' || phase === 'result') ? 'var(--text-faint)' : '#0a1f22',
+                border: 'none', cursor: (phase === 'rolling' || phase === 'result') ? 'default' : 'pointer',
+                fontSize: 14, fontWeight: 700,
+                fontFamily: "'IBM Plex Sans', sans-serif",
+                transition: 'all 0.12s',
+                opacity: (phase === 'rolling' || phase === 'result') ? 0.5 : 1,
+              }}
+            >
+              ⟡ Planeswalk
+            </button>
+
+            {/* Roll die — secondary */}
             <button
               onClick={rollDieAction}
               disabled={phase !== 'playing'}
               style={{
-                padding: '9px 20px', borderRadius: 8,
-                background: phase === 'playing' ? 'var(--accent)' : 'var(--surface-2)',
-                color: phase === 'playing' ? '#0a1f22' : 'var(--text-faint)',
-                border: 'none', cursor: phase === 'playing' ? 'pointer' : 'default',
-                fontSize: 13, fontWeight: 700,
+                padding: '10px 18px', borderRadius: 8,
+                background: 'var(--surface-2)',
+                color: phase === 'playing' ? 'var(--text-muted)' : 'var(--text-faint)',
+                border: '1px solid var(--border)', cursor: phase === 'playing' ? 'pointer' : 'default',
+                fontSize: 13, fontWeight: 600,
                 fontFamily: "'IBM Plex Sans', sans-serif",
                 transition: 'all 0.12s',
+                opacity: phase === 'playing' ? 1 : 0.4,
               }}
             >
               Roll die
             </button>
 
-            {lastResult === 'blank' && phase === 'result' && (
-              <button
-                onClick={dismissResult}
-                style={{
-                  padding: '9px 16px', borderRadius: 8,
-                  background: 'var(--surface-2)', color: 'var(--text-muted)',
-                  border: '1px solid var(--border)', cursor: 'pointer',
-                  fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif",
-                }}
-              >
-                OK
-              </button>
-            )}
-
             {lastResult === 'chaos' && phase === 'result' && (
               <button
                 onClick={dismissResult}
                 style={{
-                  padding: '9px 16px', borderRadius: 8,
+                  padding: '10px 16px', borderRadius: 8,
                   background: 'rgba(224,91,60,0.12)', color: '#e05b3c',
                   border: '1px solid rgba(224,91,60,0.3)', cursor: 'pointer',
-                  fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif",
+                  fontSize: 13, fontWeight: 600,
+                  fontFamily: "'IBM Plex Sans', sans-serif",
                 }}
               >
                 Chaos resolved ✓
@@ -362,30 +375,26 @@ export function PlanechaseClient() {
             )}
 
             <button
-              onClick={manualPlaneswalk}
-              disabled={phase === 'rolling'}
-              style={{
-                padding: '9px 16px', borderRadius: 8,
-                background: 'var(--surface-2)', color: 'var(--text-muted)',
-                border: '1px solid var(--border)', cursor: phase === 'rolling' ? 'default' : 'pointer',
-                fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif",
-                opacity: phase === 'rolling' ? 0.4 : 1,
-              }}
-            >
-              ⟡ Planeswalk
-            </button>
-
-            <button
               onClick={resetGame}
               style={{
-                padding: '9px 14px', borderRadius: 8,
+                padding: '10px 14px', borderRadius: 8,
                 background: 'transparent', color: 'var(--text-faint)',
                 border: '1px solid var(--border)', cursor: 'pointer',
                 fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif",
+                marginLeft: 4,
               }}
             >
               Reset
             </button>
+          </div>
+
+          {/* Die legend */}
+          <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {([['blank', '·', '4 faces — no effect'], ['chaos', '⊕', '1 face — chaos ability'], ['planeswalk', '⟡', '1 face — planeswalk']] as const).map(([key, icon, desc]) => (
+              <span key={key} style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono',monospace", display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ color: DIE_COLORS[key] }}>{icon}</span> {desc}
+              </span>
+            ))}
           </div>
         </div>
 
