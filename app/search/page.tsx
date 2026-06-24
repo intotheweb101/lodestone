@@ -82,30 +82,40 @@ export default async function SearchPage({
           </div>
 
           {/* Syntax help disclosure */}
-          <details style={{ marginTop: 10, maxWidth: 680 }}>
+          <details style={{ marginTop: 10, maxWidth: 860 }}>
             <summary style={{ fontSize: 12, color: '#6f8a85', cursor: 'pointer', userSelect: 'none' }}>
-              Syntax help
+              Syntax reference
             </summary>
             <div style={{
-              marginTop: 8, padding: '12px 16px', background: '#0e292b',
+              marginTop: 8, padding: '14px 18px', background: '#0e292b',
               border: '1px solid #173a38', borderRadius: 8, fontSize: 12,
-              color: '#8aa39d', lineHeight: 1.8,
+              color: '#8aa39d', lineHeight: 2, columnCount: 2, columnGap: '2rem',
             }}>
-              <code style={{ color: '#e8b14a' }}>t:creature</code> · type &nbsp;
-              <code style={{ color: '#e8b14a' }}>c:wu</code> · colors &nbsp;
-              <code style={{ color: '#e8b14a' }}>id:grixis</code> · color identity &nbsp;
-              <code style={{ color: '#e8b14a' }}>mv&lt;=3</code> · mana value <br />
-              <code style={{ color: '#e8b14a' }}>o:flying</code> · oracle text &nbsp;
-              <code style={{ color: '#e8b14a' }}>r:rare</code> · rarity &nbsp;
-              <code style={{ color: '#e8b14a' }}>f:commander</code> · format legal &nbsp;
-              <code style={{ color: '#e8b14a' }}>s:mh3</code> · set <br />
-              <code style={{ color: '#e8b14a' }}>pow&gt;=3</code> · power &nbsp;
-              <code style={{ color: '#e8b14a' }}>is:fullart</code> · flags &nbsp;
-              <code style={{ color: '#e8b14a' }}>kw:flying</code> · keyword &nbsp;
-              <code style={{ color: '#e8b14a' }}>-t:land</code> · negation <br />
-              <code style={{ color: '#e8b14a' }}>order:cmc</code> · sort &nbsp;
-              <code style={{ color: '#e8b14a' }}>dir:desc</code> · direction &nbsp;
-              Combine freely: <code style={{ color: '#e8b14a' }}>t:creature c:wu mv&lt;=3 o:flying r&gt;=rare</code>
+              <div><code style={{ color: '#e8b14a' }}>t:creature</code> · type line</div>
+              <div><code style={{ color: '#e8b14a' }}>c:wu</code> · colors (W U B R G C M)</div>
+              <div><code style={{ color: '#e8b14a' }}>id:grixis</code> · color identity</div>
+              <div><code style={{ color: '#e8b14a' }}>mv&lt;=3</code> · mana value</div>
+              <div><code style={{ color: '#e8b14a' }}>o:flying</code> · oracle text</div>
+              <div><code style={{ color: '#e8b14a' }}>r&gt;=rare</code> · rarity</div>
+              <div><code style={{ color: '#e8b14a' }}>f:commander</code> · format legal</div>
+              <div><code style={{ color: '#e8b14a' }}>banned:commander</code> · format banned</div>
+              <div><code style={{ color: '#e8b14a' }}>restricted:vintage</code> · restricted</div>
+              <div><code style={{ color: '#e8b14a' }}>s:mh3</code> · set code</div>
+              <div><code style={{ color: '#e8b14a' }}>pow&gt;=3</code> · power</div>
+              <div><code style={{ color: '#e8b14a' }}>tou&lt;=2</code> · toughness</div>
+              <div><code style={{ color: '#e8b14a' }}>loy:3</code> · loyalty</div>
+              <div><code style={{ color: '#e8b14a' }}>kw:flying</code> · keyword</div>
+              <div><code style={{ color: '#e8b14a' }}>art:tolkien</code> · artist name</div>
+              <div><code style={{ color: '#e8b14a' }}>ft:goblin</code> · flavor text</div>
+              <div><code style={{ color: '#e8b14a' }}>usd&gt;=10</code> · USD price</div>
+              <div><code style={{ color: '#e8b14a' }}>eur&lt;=5</code> · EUR price</div>
+              <div><code style={{ color: '#e8b14a' }}>year&gt;=2020</code> · release year</div>
+              <div><code style={{ color: '#e8b14a' }}>cn:100</code> · collector number</div>
+              <div><code style={{ color: '#e8b14a' }}>border:borderless</code> · border color</div>
+              <div><code style={{ color: '#e8b14a' }}>frame:showcase</code> · frame effect</div>
+              <div><code style={{ color: '#e8b14a' }}>is:foil</code> · flags (foil nonfoil fullart promo showcase extendedart borderless commander land spell textless)</div>
+              <div><code style={{ color: '#e8b14a' }}>-t:land</code> · negate any filter</div>
+              <div><code style={{ color: '#e8b14a' }}>order:released dir:desc</code> · sort</div>
             </div>
           </details>
         </form>

@@ -46,6 +46,8 @@ export interface Deck {
   created_at?: string;
   updated_at?: string;
   tags?: string[];
+  /** Parsed from color_identity_json in the DB — WUBRG symbols for the deck */
+  color_identity?: string[];
 }
 
 /** All entries that belong to the main deck (board='main' or legacy entries with no board set). */

@@ -61,7 +61,7 @@ export function getFollowing(userId: string): FollowUser[] {
 
 // ─── Notifications ─────────────────────────────────────────────────────────
 
-export type NotificationType = 'like' | 'comment' | 'follow';
+export type NotificationType = 'like' | 'comment' | 'follow' | 'price';
 
 export interface Notification {
   id: string;
@@ -72,6 +72,7 @@ export interface Notification {
   deck_id: string | null;
   deck_name: string | null;
   comment_id: string | null;
+  note_text: string | null;
   read: boolean;
   created_at: string;
 }
@@ -98,9 +99,24 @@ export function createNotification(opts: {
   ).run(randomUUID(), recipientId, actorId, type, deckId ?? null, commentId ?? null);
 }
 
+/** Create a system price-alert notification (actor = recipient, no social loop). */
+export function createPriceNotification(opts: {
+  userId: string;
+  cardName: string;
+  bestPriceNzd: number;
+  targetNzd: number;
+}): void {
+  if (opts.userId === 'local') return;
+  const db = getDb();
+  const noteText = `${opts.cardName} dropped to $${opts.bestPriceNzd.toFixed(2)} NZD (target $${opts.targetNzd.toFixed(2)})`;
+  db.prepare(
+    'INSERT INTO notifications (id, user_id, actor_id, type, deck_id, comment_id, note_text) VALUES (?, ?, ?, ?, NULL, NULL, ?)'
+  ).run(randomUUID(), opts.userId, opts.userId, 'price', noteText);
+}
+
 export function getNotifications(userId: string, limit = 30): Notification[] {
   return (getDb().prepare(`
-    SELECT n.id, n.user_id, n.actor_id, n.type, n.deck_id, n.comment_id, n.read, n.created_at,
+    SELECT n.id, n.user_id, n.actor_id, n.type, n.deck_id, n.comment_id, n.note_text, n.read, n.created_at,
            u.name AS actor_name,
            d.name AS deck_name
     FROM notifications n
@@ -109,7 +125,7 @@ export function getNotifications(userId: string, limit = 30): Notification[] {
     WHERE n.user_id = ?
     ORDER BY n.created_at DESC
     LIMIT ?
-  `).all(userId, limit) as (Omit<Notification, 'read' | 'actor_name' | 'deck_name'> & { read: number; actor_name: string; deck_name: string | null })[]).map(r => ({
+  `).all(userId, limit) as (Omit<Notification, 'read' | 'actor_name' | 'deck_name'> & { read: number; actor_name: string; deck_name: string | null; note_text: string | null })[]).map(r => ({
     ...r,
     read: !!r.read,
   }));

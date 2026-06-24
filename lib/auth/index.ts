@@ -132,6 +132,45 @@ export async function changeUserPassword(id: string, currentPassword: string, ne
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
 }
 
+// ─── Password reset tokens ────────────────────────────────────────────────────
+
+const RESET_TOKEN_TTL_HOURS = 1;
+
+/** Generate a raw reset token, store its SHA-256 hash, return the raw token. */
+export function createPasswordResetToken(userId: string): string {
+  const raw = randomBytes(32).toString('hex');
+  const hash = createHash('sha256').update(raw).digest('hex');
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_HOURS * 3600 * 1000).toISOString();
+  const id = randomBytes(16).toString('hex');
+  db.prepare(`
+    INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(id, userId, hash, expiresAt);
+  return raw;
+}
+
+/**
+ * Validate a raw token: checks hash, expiry, not-used.
+ * Marks token as used on success. Returns userId or null.
+ */
+export function consumePasswordResetToken(rawToken: string): string | null {
+  const hash = createHash('sha256').update(rawToken).digest('hex');
+  const row = db.prepare(`
+    SELECT id, user_id FROM password_reset_tokens
+    WHERE token_hash = ? AND expires_at > datetime('now') AND used_at IS NULL
+  `).get(hash) as { id: string; user_id: string } | undefined;
+  if (!row) return null;
+  db.prepare(`UPDATE password_reset_tokens SET used_at = datetime('now') WHERE id = ?`).run(row.id);
+  return row.user_id;
+}
+
+/** Set a new password for a user (skips current-password check — used after token validation). */
+export async function setUserPassword(userId: string, newPassword: string): Promise<void> {
+  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters.');
+  const hash = await hashPassword(newPassword);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+}
+
 export function deleteUser(id: string): void {
   // Decks have no ON DELETE CASCADE so remove them first; entries/likes/comments cascade from decks
   const deckIds = db.prepare('SELECT id FROM decks WHERE user_id = ?').all(id) as { id: string }[];

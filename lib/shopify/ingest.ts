@@ -248,4 +248,13 @@ export async function ingestAllShops(): Promise<void> {
     await ingestShop(shop);
   }
   syncLog('All shops complete.');
+
+  // Check price alerts after all shops have been updated
+  try {
+    const { checkPriceAlerts } = await import('../pricing/alerts');
+    checkPriceAlerts();
+    syncLog('Price alert check done.');
+  } catch (err) {
+    syncLog(`Price alert check error: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

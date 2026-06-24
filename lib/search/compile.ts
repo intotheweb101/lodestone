@@ -28,15 +28,17 @@ const KNOWN_FORMATS = new Set([
 // ── Whitelisted ORDER BY expressions ─────────────────────────────────────────
 
 const ORDER_EXPR: Record<string, string> = {
-  name: 'name COLLATE NOCASE ASC',
-  cmc:  'cmc ASC NULLS LAST',
-  price: "CAST(json_extract(prices_json,'$.usd') AS REAL) ASC NULLS LAST",
+  name:     'name COLLATE NOCASE ASC',
+  cmc:      'cmc ASC NULLS LAST',
+  price:    "CAST(json_extract(prices_json,'$.usd') AS REAL) ASC NULLS LAST",
+  released: 'released_at IS NULL ASC, released_at ASC',
 };
 
 const ORDER_EXPR_DESC: Record<string, string> = {
-  name:  'name COLLATE NOCASE DESC',
-  cmc:   'cmc DESC NULLS LAST',
-  price: "CAST(json_extract(prices_json,'$.usd') AS REAL) DESC NULLS LAST",
+  name:     'name COLLATE NOCASE DESC',
+  cmc:      'cmc DESC NULLS LAST',
+  price:    "CAST(json_extract(prices_json,'$.usd') AS REAL) DESC NULLS LAST",
+  released: 'released_at IS NULL ASC, released_at DESC',
 };
 
 // ── Per-field predicate builders ──────────────────────────────────────────────
@@ -118,13 +120,11 @@ function buildPredicate(term: SearchTerm): { sql: string; params: unknown[] } | 
     case 'pow':
     case 'tou':
     case 'loy': {
-      const colMap: Record<FilterField, string> = {
+      const colMap: Partial<Record<FilterField, string>> = {
         mv: 'cmc', pow: 'power_num', tou: 'toughness_num', loy: 'loyalty_num',
-        // unused but required for exhaustive map
-        name: '', type: '', oracle: '', colors: '', identity: '',
-        rarity: '', format: '', set: '', is: '', keyword: '',
       };
       const col = colMap[field];
+      if (!col) return null;
       const sqlOp = NUMERIC_OPS[op] ?? '=';
       const num = parseFloat(value);
       if (isNaN(num)) return null;
@@ -177,6 +177,9 @@ function buildPredicate(term: SearchTerm): { sql: string; params: unknown[] } | 
         case 'foil':
           sql = `EXISTS (SELECT 1 FROM json_each(finishes_json) WHERE value = 'foil')`;
           break;
+        case 'nonfoil':
+          sql = `EXISTS (SELECT 1 FROM json_each(finishes_json) WHERE value = 'nonfoil')`;
+          break;
         case 'etched':
           sql = `EXISTS (SELECT 1 FROM json_each(finishes_json) WHERE value = 'etched')`;
           break;
@@ -189,11 +192,38 @@ function buildPredicate(term: SearchTerm): { sql: string; params: unknown[] } | 
         case 'land':
           sql = `LOWER(type_line) LIKE '%land%'`;
           break;
+        case 'spell':
+          sql = `LOWER(type_line) NOT LIKE '%land%'`;
+          break;
+        case 'permanent':
+          sql = `(LOWER(type_line) LIKE '%creature%' OR LOWER(type_line) LIKE '%artifact%' OR LOWER(type_line) LIKE '%enchantment%' OR LOWER(type_line) LIKE '%planeswalker%' OR LOWER(type_line) LIKE '%battle%' OR LOWER(type_line) LIKE '%land%')`;
+          break;
         case 'commander':
           sql = `(LOWER(type_line) LIKE '%legendary%creature%' OR LOWER(oracle_text) LIKE '%can be your commander%')`;
           break;
+        case 'historic':
+          sql = `(LOWER(type_line) LIKE '%legendary%' OR LOWER(type_line) LIKE '%artifact%' OR LOWER(type_line) LIKE '%saga%')`;
+          break;
         case 'dfc': case 'transform': case 'flip':
           sql = `card_faces_json IS NOT NULL`;
+          break;
+        case 'split':
+          sql = `type_line LIKE '%//%'`;
+          break;
+        case 'borderless':
+          sql = `LOWER(border_color) = 'borderless'`;
+          break;
+        case 'showcase':
+          sql = `EXISTS (SELECT 1 FROM json_each(frame_effects_json) WHERE value = 'showcase')`;
+          break;
+        case 'extendedart': case 'extended-art': case 'extended_art':
+          sql = `EXISTS (SELECT 1 FROM json_each(frame_effects_json) WHERE value = 'extendedart')`;
+          break;
+        case 'retro':
+          sql = `EXISTS (SELECT 1 FROM json_each(frame_effects_json) WHERE value = 'retro')`;
+          break;
+        case 'textless':
+          sql = `(oracle_text IS NULL OR oracle_text = '')`;
           break;
         default:
           // Unknown is: — treat as no-op (don't crash)
@@ -204,6 +234,89 @@ function buildPredicate(term: SearchTerm): { sql: string; params: unknown[] } | 
 
     case 'keyword': {
       sql = `EXISTS (SELECT 1 FROM json_each(keywords_json) WHERE LOWER(value) = ?)`;
+      params.push(value.toLowerCase());
+      break;
+    }
+
+    case 'price_usd': {
+      const sqlOp = NUMERIC_OPS[op] ?? '=';
+      const num = parseFloat(value);
+      if (isNaN(num)) return null;
+      const col = `CAST(json_extract(prices_json,'$.usd') AS REAL)`;
+      sql = `${col} IS NOT NULL AND ${col} ${sqlOp} ?`;
+      params.push(num);
+      break;
+    }
+
+    case 'price_eur': {
+      const sqlOp = NUMERIC_OPS[op] ?? '=';
+      const num = parseFloat(value);
+      if (isNaN(num)) return null;
+      const col = `CAST(json_extract(prices_json,'$.eur') AS REAL)`;
+      sql = `${col} IS NOT NULL AND ${col} ${sqlOp} ?`;
+      params.push(num);
+      break;
+    }
+
+    case 'artist': {
+      sql = `LOWER(artist) LIKE ?`;
+      params.push(`%${value.toLowerCase()}%`);
+      break;
+    }
+
+    case 'flavor': {
+      sql = `LOWER(flavor_text) LIKE ?`;
+      params.push(`%${value.toLowerCase()}%`);
+      break;
+    }
+
+    case 'year': {
+      const sqlOp = NUMERIC_OPS[op] ?? '=';
+      const num = parseInt(value, 10);
+      if (isNaN(num)) return null;
+      sql = `released_at IS NOT NULL AND CAST(strftime('%Y', released_at) AS INTEGER) ${sqlOp} ?`;
+      params.push(num);
+      break;
+    }
+
+    case 'banned': {
+      const fmt = value.toLowerCase().replace(/[^a-z]/g, '');
+      if (!KNOWN_FORMATS.has(fmt)) { sql = '1 = 0'; break; }
+      sql = `json_extract(legalities_json, ?) = 'banned'`;
+      params.push(`$.${fmt}`);
+      break;
+    }
+
+    case 'restricted': {
+      const fmt = value.toLowerCase().replace(/[^a-z]/g, '');
+      if (!KNOWN_FORMATS.has(fmt)) { sql = '1 = 0'; break; }
+      sql = `json_extract(legalities_json, ?) = 'restricted'`;
+      params.push(`$.${fmt}`);
+      break;
+    }
+
+    case 'cn': {
+      if (op === ':' || op === '=') {
+        sql = `collector_number = ?`;
+        params.push(value);
+      } else {
+        const sqlOp = NUMERIC_OPS[op] ?? '=';
+        const num = parseInt(value, 10);
+        if (isNaN(num)) return null;
+        sql = `CAST(collector_number AS INTEGER) ${sqlOp} ?`;
+        params.push(num);
+      }
+      break;
+    }
+
+    case 'border': {
+      sql = `LOWER(border_color) = ?`;
+      params.push(value.toLowerCase());
+      break;
+    }
+
+    case 'frame': {
+      sql = `EXISTS (SELECT 1 FROM json_each(frame_effects_json) WHERE LOWER(value) = ?)`;
       params.push(value.toLowerCase());
       break;
     }
@@ -288,9 +401,11 @@ export function compileQuery(
 
   const sql = `
     SELECT scryfall_id, oracle_id, name, name_norm, set_code, collector_number,
-           type_line, mana_cost, cmc, oracle_text, rarity, color_identity_json,
-           finishes_json, full_art, image_uris_json, prices_json, legalities_json,
-           card_faces_json
+           type_line, mana_cost, cmc, oracle_text, rarity,
+           color_identity_json, colors_json, finishes_json, frame_effects_json,
+           border_color, full_art, image_uris_json, prices_json, legalities_json,
+           card_faces_json, keywords_json, artist, flavor_text, released_at,
+           power, toughness, loyalty, prints_search_uri
     FROM scryfall_cards
     ${whereClause}
     GROUP BY oracle_id

@@ -1,8 +1,13 @@
 import { redirect } from 'next/navigation';
 import { runMigrations } from '@/lib/db/migrations';
 import { resolveActingUser } from '@/lib/auth/session';
-import { getCollectionWithCards } from '@/lib/collection/store';
+import { getCollectionWithCards, getCollectionValueHistory } from '@/lib/collection/store';
+import type { ValueHistoryPoint } from '@/lib/collection/store';
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
+import { QuickAddPanel } from './quick-add-panel';
+import { CollectionCharts } from './collection-charts';
+import { BulkActions } from './bulk-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +20,7 @@ export default async function CollectionPage() {
   if (user.id === 'local') redirect('/login');
 
   const entries = getCollectionWithCards(user.id);
+  const valueHistory = getCollectionValueHistory(user.id, 90);
 
   const totalCards = entries.reduce((s, e) => s + e.quantity, 0);
   const uniqueCards = entries.length;
@@ -33,18 +39,29 @@ export default async function CollectionPage() {
           <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>
             My Collection
           </h1>
-          <Link href="/collection/import" style={{
-            padding: '6px 16px', borderRadius: '7px', fontSize: '12px', fontWeight: 600,
-            background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--accent)',
-            textDecoration: 'none', fontFamily: "'IBM Plex Sans', sans-serif",
-          }}>
-            Import CSV
-          </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link href="/collection/import" style={{
+              padding: '6px 16px', borderRadius: '7px', fontSize: '12px', fontWeight: 600,
+              background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--accent)',
+              textDecoration: 'none', fontFamily: "'IBM Plex Sans', sans-serif",
+            }}>
+              Import CSV
+            </Link>
+            <Link href="/api/collection/export" style={{
+              padding: '6px 16px', borderRadius: '7px', fontSize: '12px', fontWeight: 600,
+              background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)',
+              textDecoration: 'none', fontFamily: "'IBM Plex Sans', sans-serif",
+            }}>
+              Export CSV
+            </Link>
+          </div>
         </div>
         <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginTop: 4 }}>
           Cards you own across all your decks.
         </p>
       </div>
+
+      <QuickAddPanel />
 
       {/* Stats */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '2rem', flexWrap: 'wrap' }}>
@@ -83,6 +100,14 @@ export default async function CollectionPage() {
           </div>
         )}
       </div>
+
+      {/* Value over time */}
+      <CollectionValueChart history={valueHistory} />
+
+      {/* Collection breakdown charts */}
+      {entries.length > 0 && (
+        <CollectionCharts entries={entries} />
+      )}
 
       {entries.length === 0 ? (
         /* Empty state */
@@ -202,6 +227,143 @@ export default async function CollectionPage() {
           })}
         </div>
       )}
+
+      {/* Bulk actions panel */}
+      {entries.length > 0 && (
+        <div style={{ marginTop: '2rem' }}>
+          <BulkActions entries={entries.map(e => ({
+            oracle_id: e.oracle_id,
+            card_name: e.name,
+            quantity: e.quantity,
+            foil: e.foil,
+            for_trade: e.for_trade,
+          }))} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollectionValueChart({ history }: { history: ValueHistoryPoint[] }) {
+  const wrapStyle: CSSProperties = {
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '2rem',
+  };
+  const labelStyle: CSSProperties = {
+    fontSize: '10px',
+    fontFamily: "'IBM Plex Mono', monospace",
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: 'var(--text-faint)',
+  };
+
+  if (history.length === 0) {
+    return (
+      <div style={wrapStyle}>
+        <div style={labelStyle}>Value over time</div>
+        <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginTop: '8px' }}>
+          No snapshots yet — value history accumulates daily after each sync.
+        </p>
+      </div>
+    );
+  }
+
+  if (history.length === 1) {
+    const pt = history[0];
+    return (
+      <div style={wrapStyle}>
+        <div style={labelStyle}>Value over time</div>
+        <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginTop: '8px' }}>
+          First snapshot captured on {pt.snapshot_date} —{' '}
+          <span style={{ color: '#54c08a', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
+            ${pt.value_usd.toFixed(2)} USD
+          </span>
+          . Check back tomorrow for a trend.
+        </p>
+      </div>
+    );
+  }
+
+  const W = 600, H = 100, PADX = 8, PADY = 10;
+  const values = history.map((h) => h.value_usd);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+  const first = values[0];
+  const latest = values[values.length - 1];
+  const delta = latest - first;
+
+  const toX = (i: number) => PADX + (i / (history.length - 1)) * (W - PADX * 2);
+  const toY = (v: number) => PADY + (1 - (v - minV) / range) * (H - PADY * 2);
+
+  const lineColor = delta > 0 ? '#54c08a' : delta < 0 ? '#e2645c' : '#e8b14a';
+  const fillColor =
+    delta > 0 ? 'rgba(84,192,138,0.10)' : delta < 0 ? 'rgba(226,100,92,0.08)' : 'rgba(232,177,74,0.08)';
+
+  const pts = history.map((h, i) => `${toX(i)},${toY(h.value_usd)}`).join(' ');
+  const lastX = toX(history.length - 1);
+  const lastY = toY(latest);
+  const fillPath =
+    `M${toX(0)},${toY(first)} ` +
+    history.map((h, i) => `L${toX(i)},${toY(h.value_usd)}`).join(' ') +
+    ` L${lastX},${H} L${toX(0)},${H} Z`;
+
+  const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
+  const deltaStr =
+    delta === 0
+      ? 'flat'
+      : `${arrow} $${Math.abs(delta).toFixed(2)} since ${history[0].snapshot_date}`;
+
+  return (
+    <div style={wrapStyle}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '10px' }}>
+        <span style={labelStyle}>Value over time · 90d</span>
+        <span
+          style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: '12px',
+            fontWeight: 600,
+            color: lineColor,
+          }}
+        >
+          {deltaStr}
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: '100%', display: 'block', overflow: 'visible' }}
+        aria-hidden
+      >
+        <path d={fillPath} fill={fillColor} />
+        <polyline
+          points={pts}
+          fill="none"
+          stroke={lineColor}
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        <circle cx={lastX} cy={lastY} r="4" fill={lineColor} />
+      </svg>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: '6px',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: '10px',
+          color: 'var(--text-faint)',
+        }}
+      >
+        <span>{history[0].snapshot_date}</span>
+        <span>
+          ${minV.toFixed(2)} – ${maxV.toFixed(2)} USD
+        </span>
+        <span>{history[history.length - 1].snapshot_date}</span>
+      </div>
     </div>
   );
 }

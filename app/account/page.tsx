@@ -3,6 +3,7 @@ import { runMigrations } from '@/lib/db/migrations';
 import { requireUser } from '@/lib/auth/session';
 import { getUserFull } from '@/lib/auth/index';
 import { AccountSettingsClient } from './account-settings-client';
+import { ApiKeysPanel } from './api-keys-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,10 @@ export default async function AccountPage() {
         isGoogleLinked={!!full.google_id}
         role={full.role}
       />
+
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border)', paddingTop: '2rem' }}>
+        <ApiKeysPanel userId={full.id} />
+      </div>
     </div>
   );
 }

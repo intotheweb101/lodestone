@@ -33,6 +33,16 @@ export function startScheduler() {
       // Stamp AFTER success so a failed sync retries on the next check interval
       db.prepare("UPDATE sync_settings SET last_auto_sync_at = datetime('now') WHERE id = 1").run();
       console.log('[Lodestone scheduler] Auto-sync complete');
+
+      // Snapshot collection values for all real users after each sync
+      try {
+        const { snapshotCollectionValue } = await import('@/lib/collection/store');
+        const users = db.prepare("SELECT id FROM users WHERE id != 'local'").all() as { id: string }[];
+        for (const u of users) {
+          try { snapshotCollectionValue(u.id); } catch { /* non-fatal */ }
+        }
+        console.log(`[Lodestone scheduler] Snapshotted collection values for ${users.length} users`);
+      } catch { /* non-fatal — don't block scheduler on snapshot errors */ }
     } catch (err) {
       console.error('[Lodestone scheduler] Error:', err);
     }

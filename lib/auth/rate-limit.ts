@@ -21,8 +21,9 @@ export function getClientIp(req: Request): string {
 /**
  * Check and record an attempt for the given key (e.g. `login:1.2.3.4`).
  * Returns `{ limited: true }` if the limit is exceeded, otherwise `{ limited: false }`.
+ * @param maxAttempts Override the default limit (defaults to MAX_ATTEMPTS = 10).
  */
-export function checkRateLimit(key: string): { limited: boolean; remaining: number } {
+export function checkRateLimit(key: string, maxAttempts = MAX_ATTEMPTS): { limited: boolean; remaining: number } {
   const db = getDb();
 
   // Ensure table exists (idempotent)
@@ -46,13 +47,13 @@ export function checkRateLimit(key: string): { limited: boolean; remaining: numb
 
   if (!row) {
     db.prepare(`INSERT INTO auth_rate_limit (key, attempts, window_end) VALUES (?, 1, ?)`).run(key, windowEnd);
-    return { limited: false, remaining: MAX_ATTEMPTS - 1 };
+    return { limited: false, remaining: maxAttempts - 1 };
   }
 
-  if (row.attempts >= MAX_ATTEMPTS) {
+  if (row.attempts >= maxAttempts) {
     return { limited: true, remaining: 0 };
   }
 
   db.prepare(`UPDATE auth_rate_limit SET attempts = attempts + 1 WHERE key = ?`).run(key);
-  return { limited: false, remaining: MAX_ATTEMPTS - row.attempts - 1 };
+  return { limited: false, remaining: maxAttempts - row.attempts - 1 };
 }

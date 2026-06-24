@@ -274,3 +274,46 @@ export function getPricesByMatchKeys(
   `;
   return db.prepare(sql).all(...matchKeys, conditionRankMax) as VariantPrice[];
 }
+
+// ---- Sets ----
+
+export interface SetRow {
+  code: string;
+  name: string;
+  set_type: string | null;
+  released_at: string | null;
+  card_count: number | null;
+  icon_svg_uri: string | null;
+}
+
+/** All sets, newest first. Future-dated sets naturally sort to the top (spoiler view). */
+export function listSets(): SetRow[] {
+  return getDb().prepare(`
+    SELECT code, name, set_type, released_at, card_count, icon_svg_uri
+    FROM sets
+    ORDER BY
+      released_at IS NULL ASC,
+      released_at DESC,
+      name ASC
+  `).all() as SetRow[];
+}
+
+/**
+ * All individual printings in a set, ordered by collector number.
+ * Returns every printing (not deduped by oracle_id like the search path).
+ */
+export function getCardsInSet(setCode: string): ScryfallCard[] {
+  const rows = getDb().prepare(`
+    SELECT c.*, s.name AS set_name
+    FROM scryfall_cards c
+    LEFT JOIN sets s ON s.code = c.set_code
+    WHERE c.set_code = ?
+    ORDER BY
+      CASE WHEN c.collector_number GLOB '[0-9]*'
+           THEN CAST(c.collector_number AS INTEGER)
+           ELSE 9999
+      END,
+      c.collector_number
+  `).all(setCode.toLowerCase()) as Record<string, unknown>[];
+  return rows.map(parseScryfallRow);
+}

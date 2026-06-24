@@ -35,7 +35,7 @@ export function normalizeName(raw: string): string {
   s = s.replace(/\s*[\(\[].*/g, '').trim();
 
   // Normalise punctuation variants
-  s = s.replace(/['']/g, "'"); // smart quotes → plain apostrophe
+  s = s.replace(/[\u2018\u2019]/g, "'"); // smart quotes → plain apostrophe
 
   // Collapse whitespace
   s = s.replace(/\s+/g, ' ').trim();
@@ -94,8 +94,9 @@ export function parseFinishFromSku(sku: string): 'foil' | 'nonfoil' | 'etched' |
 export function parseFinishFromTitle(title: string): 'foil' | 'nonfoil' | 'etched' | 'unknown' {
   const lower = title.toLowerCase();
   if (lower.includes('etched')) return 'etched';
-  if (lower.includes('foil')) return 'foil';
+  // Check non-foil variants before 'foil' — "Non-Foil" contains "foil" as a substring
   if (lower.includes('non-foil') || lower.includes('nonfoil') || lower.includes('non foil')) return 'nonfoil';
+  if (lower.includes('foil')) return 'foil';
   return 'unknown';
 }
 

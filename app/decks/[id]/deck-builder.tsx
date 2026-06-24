@@ -15,7 +15,11 @@ import {
   actionSetCommander, actionSetDeckSpend, actionUpdateDeckMeta, actionCloneDeck,
   actionDeleteDeck, actionSetDeckTags, actionSetEntryCategory, actionSetCommanderRole2,
   actionAddToWishlist, actionAddMissingToWishlist,
+  actionSnapshotDeck, actionListVersions, actionRestoreVersion,
+  actionListPackages, actionGetPackageEntries, actionInsertPackageToDeck,
 } from '@/app/actions';
+import { BracketBadge } from '@/components/bracket-badge';
+import { AcquireTab } from './acquire-tab';
 
 interface CardSearchResult {
   scryfall_id: string;
@@ -26,6 +30,7 @@ interface CardSearchResult {
   mana_cost: string | null;
   image_url: string | null;
   color_identity: string[];
+  owned?: boolean;
 }
 
 interface PricedDeck {
@@ -51,7 +56,7 @@ interface Recommendation {
   card_name?: string;
 }
 
-type Tab = 'list' | 'price' | 'buy-missing' | 'recommend' | 'analytics' | 'import' | 'primer';
+type Tab = 'list' | 'price' | 'buy-missing' | 'recommend' | 'analytics' | 'combos' | 'history' | 'import' | 'primer' | 'games';
 
 interface ShopMeta {
   name: string;
@@ -68,6 +73,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<CardSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [ownedFilter, setOwnedFilter] = useState(false);
   const [pricedDeck, setPricedDeck] = useState<PricedDeck | null>(null);
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [recommendations, setRecommendations] = useState<Recommendation[] | null>(null);
@@ -242,17 +248,24 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
     }
   }
 
-  async function searchCards(q: string) {
+  async function searchCards(q: string, owned = ownedFilter) {
     setSearchQuery(q);
     if (q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const url = `/api/search?q=${encodeURIComponent(q)}${owned ? '&owned=1' : ''}`;
+      const res = await fetch(url);
       const data = await res.json() as { cards: CardSearchResult[] };
       setSearchResults(data.cards ?? []);
     } finally {
       setSearching(false);
     }
+  }
+
+  function toggleOwnedFilter() {
+    const next = !ownedFilter;
+    setOwnedFilter(next);
+    if (searchQuery.length >= 2) searchCards(searchQuery, next);
   }
 
   async function addCard(card: CardSearchResult, isCommander = false) {
@@ -283,6 +296,14 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
     }));
     setSearchQuery('');
     setSearchResults([]);
+  }
+
+  async function addCardByName(name: string) {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(`name:${name}`)}&limit=1`);
+    if (!res.ok) return;
+    const data = await res.json() as { cards: CardSearchResult[] };
+    const card = data.cards?.[0];
+    if (card) addCard(card);
   }
 
   async function removeCard(oracleId: string, board?: string) {
@@ -395,7 +416,10 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
     ['price', 'NZ Prices'],
     ['buy-missing', 'Buy Missing'],
     ['analytics', 'Analytics'],
+    ['combos', '⚡ Combos'],
     ['recommend', 'Improve'],
+    ['games', '🎲 Games'],
+    ['history', 'History'],
     ['primer', 'Primer'],
     ['import', 'Import'],
   ];
@@ -427,6 +451,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
         <PlaytestModal
           entries={deck.entries}
           deckName={deck.name}
+          deckId={deck.id}
           onClose={() => setShowPlaytest(false)}
         />
       )}
@@ -455,6 +480,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                 {totalCards} / {deck.format === 'commander' ? '100' : '60'}
               </span>
               {(() => { const l = isLegal(deck); return <LegalityBadge legal={l.legal} reason={l.reason} />; })()}
+              {deck.format === 'commander' && <BracketBadge deckId={deck.id} compact />}
               {commander && (
                 <span style={{ fontSize: '12.5px', color: 'var(--accent)', fontStyle: 'italic' }}>
                   {commander.card_name}
@@ -517,6 +543,9 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
             </Btn>
             <Btn onClick={priceWholeDeck} disabled={loadingPrices || deck.entries.length === 0}>
               {loadingPrices ? 'Pricing…' : '✦ Price deck'}
+            </Btn>
+            <Btn variant="ghost" onClick={async () => { await actionSnapshotDeck(deck.id); setTab('history'); }}>
+              📸 Snapshot
             </Btn>
           </div>
         </div>
@@ -623,6 +652,21 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                   </div>
                 )}
               </div>
+
+              {/* Print proxies link */}
+              <a
+                href={`/decks/${deck.id}/print`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '11px', fontWeight: 600, padding: '5px 10px', borderRadius: '7px',
+                  background: '#0e292b', border: '1px solid #214a47',
+                  color: '#6f8a85', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif",
+                  textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                🖨 Print
+              </a>
             </div>
 
             {/* Board tabs */}
@@ -799,6 +843,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                                 treatment={entry.treatment}
                                 bestPrice={priceMap.get(entry.oracle_id) ?? null}
                                 imageUrl={showImages ? (imageMap[entry.oracle_id] ?? null) : null}
+                                hoverImageUrl={imageMap[entry.oracle_id] ?? null}
                                 owned={(collection[entry.oracle_id]?.have ?? 0) + (collection[entry.oracle_id]?.foil_have ?? 0) >= entry.quantity}
                                 onToggleOwned={entry.scryfall_id ? () => toggleOwned(entry.oracle_id, entry.scryfall_id!, entry.card_name, entry.quantity) : undefined}
                                 onCardClick={entry.scryfall_id ? () => setCardPanel({ scryfallId: entry.scryfall_id!, name: entry.card_name }) : undefined}
@@ -870,6 +915,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                       treatment={entry.treatment}
                       bestPrice={priceMap.get(entry.oracle_id) ?? null}
                       imageUrl={viewMode === 'list' ? (imageMap[entry.oracle_id] ?? null) : null}
+                      hoverImageUrl={imageMap[entry.oracle_id] ?? null}
                       owned={(collection[entry.oracle_id]?.have ?? 0) + (collection[entry.oracle_id]?.foil_have ?? 0) >= entry.quantity}
                       onToggleOwned={entry.scryfall_id ? () => toggleOwned(entry.oracle_id, entry.scryfall_id!, entry.card_name, entry.quantity) : undefined}
                       onCardClick={entry.scryfall_id ? () => setCardPanel({ scryfallId: entry.scryfall_id!, name: entry.card_name }) : undefined}
@@ -906,6 +952,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                       treatment={entry.treatment}
                       bestPrice={priceMap.get(entry.oracle_id) ?? null}
                       imageUrl={showImages ? (imageMap[entry.oracle_id] ?? null) : null}
+                      hoverImageUrl={imageMap[entry.oracle_id] ?? null}
                       owned={(collection[entry.oracle_id]?.have ?? 0) + (collection[entry.oracle_id]?.foil_have ?? 0) >= entry.quantity}
                       onToggleOwned={entry.scryfall_id ? () => toggleOwned(entry.oracle_id, entry.scryfall_id!, entry.card_name, entry.quantity) : undefined}
                       onCardClick={entry.scryfall_id ? () => setCardPanel({ scryfallId: entry.scryfall_id!, name: entry.card_name }) : undefined}
@@ -939,6 +986,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
                       treatment={entry.treatment}
                       bestPrice={priceMap.get(entry.oracle_id) ?? null}
                       imageUrl={showImages ? (imageMap[entry.oracle_id] ?? null) : null}
+                      hoverImageUrl={imageMap[entry.oracle_id] ?? null}
                       owned={(collection[entry.oracle_id]?.have ?? 0) + (collection[entry.oracle_id]?.foil_have ?? 0) >= entry.quantity}
                       onToggleOwned={entry.scryfall_id ? () => toggleOwned(entry.oracle_id, entry.scryfall_id!, entry.card_name, entry.quantity) : undefined}
                       onCardClick={entry.scryfall_id ? () => setCardPanel({ scryfallId: entry.scryfall_id!, name: entry.card_name }) : undefined}
@@ -1008,7 +1056,21 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
             background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 'var(--radius-lg)', padding: '14px',
           }}>
-            <SectionLabel>Add cards</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <SectionLabel>Add cards</SectionLabel>
+              <button
+                onClick={toggleOwnedFilter}
+                style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 20, cursor: 'pointer',
+                  background: ownedFilter ? 'rgba(84,192,138,0.15)' : 'var(--surface-2)',
+                  border: `1px solid ${ownedFilter ? 'rgba(84,192,138,0.5)' : 'var(--border)'}`,
+                  color: ownedFilter ? '#54c08a' : 'var(--text-faint)',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}
+              >
+                {ownedFilter ? '✓ owned only' : 'owned only'}
+              </button>
+            </div>
             <input
               type="search"
               value={searchQuery}
@@ -1058,7 +1120,7 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
             </p>
             <AddMissingToWishlistButton deckId={deck.id} />
           </div>
-          <ShoppingListPanel source="deck-missing" deckId={deck.id} shopMeta={shopMeta} />
+          <AcquireTab deck={deck} collection={collection} imageMap={imageMap} shopMeta={shopMeta} />
         </div>
       )}
 
@@ -1075,6 +1137,21 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
           onLoad={getRecommendations}
           onAddCard={addCard}
         />
+      )}
+
+      {/* Tab: Combos */}
+      {tab === 'combos' && (
+        <CombosTab deckId={deck.id} onAddCard={addCardByName} />
+      )}
+
+      {/* Tab: Game Log */}
+      {tab === 'games' && (
+        <GamesTab deckId={deck.id} />
+      )}
+
+      {/* Tab: Version History */}
+      {tab === 'history' && (
+        <HistoryTab deckId={deck.id} />
       )}
 
       {/* Tab: Primer */}
@@ -1145,11 +1222,16 @@ function SearchResultRow({ card, inDeck, onAdd, onAddAsCommander }: {
       display: 'flex', alignItems: 'center', gap: '8px',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {card.name}
           </span>
           {card.color_identity.map(c => <ManaIcon key={c} symbol={c} size={12} />)}
+          {card.owned && (
+            <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(84,192,138,0.15)', color: '#54c08a', border: '1px solid rgba(84,192,138,0.3)', fontFamily: "'IBM Plex Mono', monospace" }}>
+              owned
+            </span>
+          )}
         </div>
         {card.type_line && (
           <span style={{ fontSize: '11px', color: '#8aa39d' }}>{card.type_line}</span>
@@ -2429,8 +2511,17 @@ interface AnalyticsData {
   type_counts: Record<string, number>;
   rarity_counts: Record<string, number>;
   mana_source_counts: Record<string, number>;
+  pip_demand?: Record<string, number>;
   /** Per-card enrichment keyed by oracle_id. Populated by the analytics API. */
   card_data?: Record<string, { type_line: string | null; cmc: number | null }>;
+  token_makers?: { cardName: string; descriptors: string[] }[];
+  mana_warnings?: string[];
+  land_advice?: string[];
+  archetype?: {
+    primary: string;
+    scores: { archetype: string; score: number; reasons: string[] }[];
+  };
+  price_history?: { date: string; totalNzd: number; cardsCovered: number }[];
 }
 
 const MANA_COLORS_FULL: Record<string, string> = {
@@ -2614,6 +2705,128 @@ function AnalyticsTab({ deck }: { deck: Deck }) {
         </div>
       )}
 
+      {/* Mana-base analyzer (2D) */}
+      {data && ((data.mana_warnings?.length ?? 0) > 0 || (data.land_advice?.length ?? 0) > 0) && (
+        <div style={{ background: 'var(--surface)', border: '1px solid rgba(232,177,74,0.3)', borderRadius: 10, padding: '14px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10, fontFamily: "'IBM Plex Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Mana Base
+          </div>
+          {data.pip_demand && (
+            <div style={{ marginBottom: 12 }}>
+              <BarChart data={data.pip_demand} colors={MANA_COLORS_FULL} label="Colored pip demand" />
+            </div>
+          )}
+          {[...(data.land_advice ?? []), ...(data.mana_warnings ?? [])].map((w, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-muted)', padding: '5px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <span style={{ color: '#e8b14a', flexShrink: 0 }}>⚠</span>
+              <span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Produced tokens (2C) */}
+      {data && (data.token_makers?.length ?? 0) > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10, fontFamily: "'IBM Plex Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Tokens this deck creates
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {data.token_makers!.map(tm => (
+              <div key={tm.cardName} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13, padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ minWidth: 160, color: 'var(--text)' }}>{tm.cardName}</span>
+                <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>{tm.descriptors.join(', ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Archetype classification */}
+      {data?.archetype && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10, fontFamily: "'IBM Plex Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Archetype
+          </div>
+          {/* Primary badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            {(() => {
+              const colors: Record<string, string> = { Aggro: '#e05b3c', Control: '#4a90d9', Combo: '#9b8fba', Midrange: '#54c08a', Stax: '#888888', Tokens: '#e8b14a', Reanimator: '#7b6bd6', Ramp: '#4caf7a', Tempo: '#48c8c8' };
+              const c = colors[data.archetype.primary] ?? '#a0b0b4';
+              return (
+                <span style={{ background: `${c}22`, color: c, border: `1px solid ${c}55`, borderRadius: 6, padding: '4px 12px', fontSize: 14, fontWeight: 700, fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                  {data.archetype.primary}
+                </span>
+              );
+            })()}
+          </div>
+          {/* Score bars (top 4) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {data.archetype.scores.slice(0, 4).map(s => {
+              const colors: Record<string, string> = { Aggro: '#e05b3c', Control: '#4a90d9', Combo: '#9b8fba', Midrange: '#54c08a', Stax: '#888888', Tokens: '#e8b14a', Reanimator: '#7b6bd6', Ramp: '#4caf7a', Tempo: '#48c8c8' };
+              const c = colors[s.archetype] ?? '#a0b0b4';
+              const maxScore = data.archetype!.scores[0]?.score ?? 1;
+              const pct = maxScore > 0 ? Math.round((s.score / maxScore) * 100) : 0;
+              return (
+                <div key={s.archetype}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2, color: 'var(--text-faint)' }}>
+                    <span>{s.archetype}</span>
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace" }}>{s.score}</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 2, background: 'var(--border)' }}>
+                    <div style={{ height: '100%', borderRadius: 2, width: `${pct}%`, background: c, transition: 'width 0.3s' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Price history (90-day NZD) */}
+      {data?.price_history && data.price_history.length >= 2 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10, fontFamily: "'IBM Plex Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Deck value — 90 days (NZD)
+          </div>
+          {(() => {
+            const pts = data.price_history!;
+            const values = pts.map(p => p.totalNzd);
+            const minV = Math.min(...values);
+            const maxV = Math.max(...values);
+            const range = maxV - minV || 1;
+            const W = 400, H = 80, PAD = 4;
+            const points = pts.map((p, i) => {
+              const x = PAD + (i / Math.max(pts.length - 1, 1)) * (W - PAD * 2);
+              const y = H - PAD - ((p.totalNzd - minV) / range) * (H - PAD * 2);
+              return `${x},${y}`;
+            }).join(' ');
+            const last = pts[pts.length - 1];
+            const first = pts[0];
+            const delta = last.totalNzd - first.totalNzd;
+            return (
+              <div>
+                <div style={{ display: 'flex', gap: 14, marginBottom: 8, alignItems: 'baseline' }}>
+                  <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 18, fontWeight: 700, color: 'var(--accent)' }}>
+                    NZ${last.totalNzd.toFixed(2)}
+                  </span>
+                  <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: delta >= 0 ? '#54c08a' : '#e2645c' }}>
+                    {delta >= 0 ? '+' : ''}{delta.toFixed(2)}
+                  </span>
+                </div>
+                <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
+                  <polyline points={points} fill="none" stroke="#e8b14a" strokeWidth="2" strokeLinejoin="round" />
+                </svg>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono',monospace", marginTop: 2 }}>
+                  <span>{first.date}</span>
+                  <span>{last.date}</span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Decklist grouping controls */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
@@ -2672,6 +2885,13 @@ function PrimerTab({ deck, onSaved }: { deck: Deck; onSaved: (d: Deck) => void }
     }
   }
 
+  const TEMPLATES: { label: string; body: string }[] = [
+    { label: 'Commander', body: `# ${deck.name}\n\n## Overview\nBrief description of what this deck does and why you built it.\n\n## Strategy\nDescribe your main game plan and win conditions.\n\n## Key Synergies\n- Card A + Card B: explain the interaction\n- Card C: why it's in here\n\n## Card Choices\nExplain notable inclusions or cuts.\n\n## Weaknesses\nWhat the deck struggles against.\n\n## Budget Notes\nAny budget alternatives or upgrade paths.` },
+    { label: 'Combo', body: `# ${deck.name}\n\n## The Combo\nDescribe the win condition and how many pieces it requires.\n\n## Combo Lines\n1. Piece A + Piece B: outcome\n2. Alternative line: outcome\n\n## Tutors & Redundancy\nHow you find pieces reliably.\n\n## Interaction\nHow you protect the combo and deal with opponents.\n\n## Backup Plans\nWhat you do when the combo is disrupted.` },
+    { label: 'Aggro', body: `# ${deck.name}\n\n## Game Plan\nKill opponents as fast as possible. Target turn 4–5 wins.\n\n## Early Threats\nYour best turn 1–2 plays.\n\n## Reach\nHow you deal the last points of damage (burn, evasion, etc).\n\n## Curves & Sequencing\nIdeal sequencing for a turn 4 kill.\n\n## Weaknesses\nSlower matchups and how to sideboard.` },
+    { label: 'Budget', body: `# ${deck.name} (Budget Build)\n\n## Overview\nThis deck was built to be effective at a reasonable price point.\n\n## Budget Replacements\n- Expensive card → Budget alternative: explain the trade-off\n\n## Upgrade Path\nCards to add as budget allows:\n1. First upgrade (~$X): why it's worth it\n2. Second upgrade (~$X)\n\n## Total Budget: NZ$XX` },
+  ];
+
   const btnBase: React.CSSProperties = {
     padding: '4px 12px', border: '1px solid var(--border)', borderRadius: '6px',
     fontSize: '12px', cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif",
@@ -2703,6 +2923,26 @@ function PrimerTab({ deck, onSaved }: { deck: Deck; onSaved: (d: Deck) => void }
           </button>
         </div>
       </div>
+
+      {/* Template picker — only shown when editor is empty */}
+      {!text.trim() && mode === 'write' && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6, fontFamily: "'IBM Plex Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Start from a template
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {TEMPLATES.map(t => (
+              <button
+                key={t.label}
+                onClick={() => setText(t.body)}
+                style={{ ...btnBase, background: 'var(--surface-2)', color: 'var(--accent)', borderColor: 'rgba(232,177,74,0.3)' }}
+              >
+                {t.label} primer
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {mode === 'write' ? (
         <textarea
@@ -2790,5 +3030,426 @@ function AddMissingToWishlistButton({ deckId }: { deckId: string }) {
           ? 'Adding…'
           : '+ Add missing to wishlist'}
     </button>
+  );
+}
+
+// ── CombosTab ─────────────────────────────────────────────────────────────────
+
+interface ComboCard { name: string; oracleId: string | null; image: string | null }
+interface Combo {
+  id: string;
+  cards: ComboCard[];
+  missing: ComboCard[];
+  produces: { name: string }[];
+  description: string;
+  bracketTag: string | null;
+}
+interface ComboResult { included: Combo[]; almostIncluded: Combo[] }
+
+function CombosTab({ deckId, onAddCard }: { deckId: string; onAddCard: (name: string) => void }) {
+  const [data, setData] = useState<ComboResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/deck/${deckId}/combos`);
+      if (res.ok) setData(await res.json() as ComboResult);
+    } finally { setLoading(false); setLoaded(true); }
+  }
+
+  useEffect(() => { load(); }, [deckId]);
+
+  if (loading) return (
+    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>
+      Checking Commander Spellbook for combos…
+    </div>
+  );
+
+  if (!loaded) return null;
+
+  const included = data?.included ?? [];
+  const almost = data?.almostIncluded ?? [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Active combos */}
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>
+          Combos in this deck ({included.length})
+        </div>
+        {included.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No known combos detected.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {included.map(c => (
+              <ComboCard key={c.id} combo={c} onAddCard={onAddCard} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Almost included */}
+      {almost.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+            One or two cards away ({almost.length})
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>
+            Add the highlighted card(s) to enable these combos.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {almost.map(c => (
+              <ComboCard key={c.id} combo={c} onAddCard={onAddCard} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {included.length === 0 && almost.length === 0 && (
+        <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>
+          No combo suggestions found. Data from{' '}
+          <a href="https://commanderspellbook.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+            Commander Spellbook ↗
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ComboCard({ combo, onAddCard }: { combo: Combo; onAddCard: (name: string) => void }) {
+  const missingNames = new Set(combo.missing.map(c => c.name));
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: '12px 14px',
+    }}>
+      {/* Cards row */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {combo.cards.map((c, i) => {
+          const missing = missingNames.has(c.name);
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{
+                fontSize: 12, padding: '2px 8px', borderRadius: 4,
+                background: missing ? 'rgba(226,100,92,0.12)' : 'rgba(84,192,138,0.1)',
+                border: `1px solid ${missing ? 'rgba(226,100,92,0.35)' : 'rgba(84,192,138,0.3)'}`,
+                color: missing ? '#e2645c' : '#54c08a',
+                fontWeight: 500,
+              }}>
+                {c.name}{missing ? ' ✕' : ''}
+              </span>
+              {missing && (
+                <button
+                  onClick={() => onAddCard(c.name)}
+                  style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'rgba(84,192,138,0.12)', border: '1px solid rgba(84,192,138,0.35)', color: '#54c08a', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Produces */}
+      {combo.produces.length > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6 }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-muted)', marginRight: 4 }}>Produces:</span>
+          {combo.produces.map(p => p.name).join(' · ')}
+        </div>
+      )}
+
+      {/* Description */}
+      {combo.description && (
+        <p style={{ fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.5, margin: 0 }}>
+          {combo.description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── HistoryTab ────────────────────────────────────────────────────────────────
+
+interface DeckVersionRow { id: string; deck_id: string; label: string | null; created_at: string; entry_count: number }
+
+function HistoryTab({ deckId }: { deckId: string }) {
+  const [versions, setVersions] = useState<DeckVersionRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
+
+  async function loadVersions() {
+    setLoading(true);
+    try {
+      const vs = await actionListVersions(deckId);
+      setVersions(vs);
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadVersions(); }, [deckId]);
+
+  async function handleSnapshot() {
+    await actionSnapshotDeck(deckId, label.trim() || undefined);
+    setLabel('');
+    await loadVersions();
+  }
+
+  async function handleRestore(versionId: string) {
+    if (!confirm('Restore this version? Your current decklist will be replaced.')) return;
+    setRestoring(versionId);
+    try {
+      await actionRestoreVersion(deckId, versionId);
+      window.location.reload();
+    } finally { setRestoring(null); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 20 }}>
+        <input
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          placeholder="Checkpoint label (optional)"
+          style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontSize: 13 }}
+        />
+        <Btn onClick={handleSnapshot}>📸 Save checkpoint</Btn>
+      </div>
+
+      {loading ? (
+        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Loading…</p>
+      ) : versions && versions.length === 0 ? (
+        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No checkpoints yet. Click "Save checkpoint" to create one.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(versions ?? []).map(v => (
+            <div key={v.id} style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 8, padding: '10px 14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                  {v.label || new Date(v.created_at).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>
+                  {v.entry_count} cards · {new Date(v.created_at).toLocaleString('en-NZ', { dateStyle: 'short', timeStyle: 'short' })}
+                </div>
+              </div>
+              <Btn
+                size="sm" variant="ghost"
+                onClick={() => handleRestore(v.id)}
+                disabled={restoring === v.id}
+              >
+                {restoring === v.id ? 'Restoring…' : 'Restore'}
+              </Btn>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── GamesTab ──────────────────────────────────────────────────────────────────
+
+interface GameEntry {
+  id: string;
+  result: 'win' | 'loss' | 'draw';
+  turns: number | null;
+  opponent: string | null;
+  opponent_archetype: string | null;
+  notes: string | null;
+  played_at: string;
+}
+
+interface WinRateStats {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winPct: number;
+  avgTurns: number | null;
+  byArchetype: { archetype: string; games: number; wins: number; winPct: number }[];
+}
+
+function GamesTab({ deckId }: { deckId: string }) {
+  const [games, setGames] = useState<GameEntry[]>([]);
+  const [stats, setStats] = useState<WinRateStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    result: 'win' as 'win' | 'loss' | 'draw',
+    turns: '',
+    opponent: '',
+    opponentArchetype: '',
+    notes: '',
+  });
+
+  async function loadGames() {
+    const res = await fetch(`/api/deck/${deckId}/games`);
+    if (!res.ok) return;
+    const data = await res.json() as { games: GameEntry[]; stats: WinRateStats };
+    setGames(data.games);
+    setStats(data.stats);
+    setLoading(false);
+  }
+
+  useEffect(() => { loadGames(); }, [deckId]);
+
+  async function handleLog(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const { actionLogGame } = await import('@/app/actions');
+      await actionLogGame(deckId, {
+        result: form.result,
+        turns: form.turns ? parseInt(form.turns, 10) : null,
+        opponent: form.opponent || null,
+        opponentArchetype: form.opponentArchetype || null,
+        notes: form.notes || null,
+      });
+      setForm({ result: 'win', turns: '', opponent: '', opponentArchetype: '', notes: '' });
+      await loadGames();
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to log game');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(gameId: string) {
+    if (!confirm('Delete this game record?')) return;
+    const { actionDeleteGame } = await import('@/app/actions');
+    await actionDeleteGame(deckId, gameId);
+    await loadGames();
+  }
+
+  const inputStyle = {
+    background: '#0e292b', border: '1px solid #214a47', borderRadius: '7px',
+    padding: '7px 10px', color: '#eef3f0', fontSize: '13px', width: '100%',
+    outline: 'none', fontFamily: "'IBM Plex Sans', sans-serif",
+  } as const;
+  const labelStyle = {
+    display: 'block', fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace",
+    letterSpacing: '1px', textTransform: 'uppercase' as const, color: 'var(--text-faint)', marginBottom: '4px',
+  };
+
+  const RESULT_COLORS: Record<string, string> = { win: '#48c8a0', loss: '#e2645c', draw: '#e8b14a' };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Stats summary */}
+      {stats && stats.games > 0 && (
+        <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '12px', padding: '20px' }}>
+          <SectionLabel>Win rate</SectionLabel>
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', margin: '12px 0' }}>
+            {(['Win', 'Loss', 'Draw'] as const).map(label => {
+              const n = label === 'Win' ? stats.wins : label === 'Loss' ? stats.losses : stats.draws;
+              const color = label === 'Win' ? '#48c8a0' : label === 'Loss' ? '#e2645c' : '#e8b14a';
+              return (
+                <div key={label} style={{ textAlign: 'center', minWidth: '60px' }}>
+                  <div style={{ fontSize: '26px', fontWeight: 700, color, fontFamily: "'IBM Plex Mono', monospace" }}>{n}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
+                </div>
+              );
+            })}
+            <div style={{ textAlign: 'center', minWidth: '60px' }}>
+              <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--accent)', fontFamily: "'IBM Plex Mono', monospace" }}>{stats.winPct}%</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Win%</div>
+            </div>
+            {stats.avgTurns != null && (
+              <div style={{ textAlign: 'center', minWidth: '60px' }}>
+                <div style={{ fontSize: '26px', fontWeight: 700, color: '#eef3f0', fontFamily: "'IBM Plex Mono', monospace" }}>{stats.avgTurns}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg turns</div>
+              </div>
+            )}
+          </div>
+          {stats.byArchetype.length > 0 && (
+            <>
+              <SectionLabel>By archetype</SectionLabel>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                {stats.byArchetype.slice(0, 6).map(a => (
+                  <div key={a.archetype} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', color: 'var(--text-muted)', padding: '3px 0' }}>
+                    <span style={{ textTransform: 'capitalize' }}>{a.archetype}</span>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: a.winPct >= 50 ? '#48c8a0' : '#e2645c' }}>
+                      {a.wins}/{a.games} ({a.winPct}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Log a game form */}
+      <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '12px', padding: '20px' }}>
+        <SectionLabel>Log a game</SectionLabel>
+        <form onSubmit={handleLog} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginTop: '12px' }}>
+          <div>
+            <label style={labelStyle}>Result</label>
+            <select value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value as 'win' | 'loss' | 'draw' }))} style={inputStyle}>
+              <option value="win">Win</option>
+              <option value="loss">Loss</option>
+              <option value="draw">Draw</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Turns</label>
+            <input type="number" min="1" max="200" placeholder="e.g. 8" value={form.turns} onChange={e => setForm(f => ({ ...f, turns: e.target.value }))} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Opponent</label>
+            <input type="text" placeholder="Name (optional)" value={form.opponent} onChange={e => setForm(f => ({ ...f, opponent: e.target.value }))} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Their archetype</label>
+            <input type="text" placeholder="e.g. Combo" value={form.opponentArchetype} onChange={e => setForm(f => ({ ...f, opponentArchetype: e.target.value }))} style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Notes</label>
+            <input type="text" placeholder="Optional notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Btn type="submit" disabled={submitting} variant="primary" size="sm">
+              {submitting ? 'Saving…' : '+ Log game'}
+            </Btn>
+          </div>
+        </form>
+      </div>
+
+      {/* Game history */}
+      {loading ? (
+        <div style={{ color: 'var(--text-faint)', fontSize: '13px', textAlign: 'center', padding: '20px' }}>Loading…</div>
+      ) : games.length === 0 ? (
+        <div style={{ color: 'var(--text-faint)', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No games logged yet. Log a game above to start tracking.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <SectionLabel>Recent games ({games.length})</SectionLabel>
+          {games.map(g => (
+            <div key={g.id} style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: RESULT_COLORS[g.result] ?? '#eef3f0', textTransform: 'uppercase', minWidth: '32px' }}>{g.result}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                  {g.opponent_archetype && <span style={{ color: '#eef3f0' }}>{g.opponent_archetype}</span>}
+                  {g.opponent && <span style={{ color: 'var(--text-faint)' }}> vs {g.opponent}</span>}
+                  {g.turns != null && <span style={{ color: 'var(--text-faint)' }}> · {g.turns} turns</span>}
+                  {!g.opponent && !g.opponent_archetype && g.turns == null && <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                </div>
+                {g.notes && <div style={{ fontSize: '11.5px', color: 'var(--text-faint)', marginTop: '2px' }}>{g.notes}</div>}
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
+                {new Date(g.played_at).toLocaleDateString('en-NZ', { dateStyle: 'short' })}
+              </span>
+              <button onClick={() => handleDelete(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', fontSize: '14px', padding: '2px 4px', lineHeight: 1 }} title="Delete">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

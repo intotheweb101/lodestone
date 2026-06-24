@@ -60,6 +60,7 @@ function SearchPageInner() {
   const { user } = useAuth();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [heroDismissed, setHeroDismissed] = useState<boolean | null>(null);
 
   async function handleQueryChange(val: string) {
     setQuery(val);
@@ -160,6 +161,33 @@ function SearchPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Read hero dismissed state from localStorage (client-side only)
+  useEffect(() => {
+    setHeroDismissed(!!localStorage.getItem('lodestone-hero-dismissed'));
+  }, []);
+
+  // '/' key: focus the search input when not already in a text field
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el as HTMLElement)?.isContentEditable
+      ) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  function dismissHero() {
+    setHeroDismissed(true);
+    localStorage.setItem('lodestone-hero-dismissed', '1');
+  }
+
   const normalPrintings = printings.filter(p => p.treatment === 'normal');
   const specialPrintings = printings.filter(p => p.treatment !== 'normal');
   const bestPrice = prices && prices.length > 0 ? prices[0] : null;
@@ -206,6 +234,11 @@ function SearchPageInner() {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           background: 'radial-gradient(120% 80% at 50% -10%, #102d2f 0%, #07151a 55%)',
         }}>
+          {/* Onboarding hero for logged-out / anonymous users */}
+          {(!user || user.id === 'local') && heroDismissed === false && (
+            <LoggedOutHero onDismiss={dismissHero} />
+          )}
+
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px', letterSpacing: '3px', color: '#e8b14a', textTransform: 'uppercase', marginBottom: '14px' }}>
             ⬡ Point true · dig for value
           </div>
@@ -510,6 +543,63 @@ function SearchPageInner() {
       )}
 
       <style>{`@keyframes ls-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function LoggedOutHero({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div style={{
+      width: '100%', maxWidth: '640px',
+      background: 'linear-gradient(135deg, #0f2a2c 0%, #0c2426 100%)',
+      border: '1px solid #1f4c4a',
+      borderRadius: '14px',
+      padding: '20px 22px',
+      marginBottom: '28px',
+      position: 'relative',
+    }}>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{
+          position: 'absolute', top: '10px', right: '12px',
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#6f8a85', padding: '4px 6px',
+          fontSize: '13px', lineHeight: 1, borderRadius: '4px',
+        }}
+      >
+        ✕
+      </button>
+      <div style={{ fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace", color: '#e8b14a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>
+        Free · No account required
+      </div>
+      <div style={{ fontSize: '16px', fontWeight: 700, color: '#f4f0e6', marginBottom: '6px' }}>
+        Build better decks. Spend less.
+      </div>
+      <p style={{ fontSize: '12.5px', color: '#8aa39d', lineHeight: 1.55, marginBottom: '14px', maxWidth: '420px', margin: '0 0 14px' }}>
+        Compare live prices across every NZ Magic retailer, track your collection, and build Commander decks — all in one place.
+      </p>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <a href="/signup" style={{
+          display: 'inline-flex', alignItems: 'center',
+          background: '#e8b14a', color: '#0a1f22',
+          fontSize: '13px', fontWeight: 700,
+          borderRadius: '8px', padding: '8px 16px',
+          textDecoration: 'none',
+        }}>
+          Create free account
+        </a>
+        <a href="/decks/browse" style={{
+          display: 'inline-flex', alignItems: 'center',
+          background: 'transparent', color: '#e8b14a',
+          fontSize: '13px', fontWeight: 600,
+          borderRadius: '8px', padding: '8px 16px',
+          textDecoration: 'none',
+          border: '1px solid rgba(232,177,74,0.35)',
+        }}>
+          Browse public decks
+        </a>
+      </div>
     </div>
   );
 }

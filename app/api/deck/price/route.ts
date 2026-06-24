@@ -5,20 +5,41 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { priceDeck, type CardPriceRequest } from '@/lib/pricing/aggregator';
 import { getDeck } from '@/lib/deck/store';
 import { getScryfallCardById } from '@/lib/db/queries';
 import { buildMatchKey } from '@/lib/match/normalize';
 import { mainboardEntries } from '@/lib/deck/model';
+import { getCurrentUser } from '@/lib/auth/session';
+import { canView } from '@/lib/auth/access';
+
+const CardSchema = z.object({
+  entry_id: z.string(),
+  card_name: z.string(),
+  match_key: z.string().nullable(),
+  finish: z.string(),
+  condition_floor: z.string(),
+});
+const DeckPriceBodySchema = z.object({
+  deck_id: z.string().optional(),
+  cards: z.array(CardSchema).optional(),
+});
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { deck_id?: string; cards?: CardPriceRequest[] };
+  const parsed = DeckPriceBodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  const body = parsed.data;
 
   let cards: CardPriceRequest[] = [];
 
   if (body.deck_id) {
     const deck = getDeck(body.deck_id);
-    if (!deck) return NextResponse.json({ error: 'Deck not found' }, { status: 404 });
+    if (!deck) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // Gate: private decks must not leak their card list to non-owners
+    const user = await getCurrentUser();
+    if (!canView(deck, user)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     cards = mainboardEntries(deck).map(entry => {
       let match_key: string | null = null;

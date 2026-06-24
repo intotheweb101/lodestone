@@ -3,6 +3,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { getDeck } from '@/lib/deck/store';
 import { getCollectionMap } from '@/lib/collection/store';
 import { runMigrations } from '@/lib/db/migrations';
+import { canView } from '@/lib/auth/access';
 
 const LOCAL_USER_ID = 'local';
 
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const userId = user?.id ?? LOCAL_USER_ID;
   const deck = getDeck(id);
   if (!deck) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!canView(deck, user)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   const collMap = getCollectionMap(userId);
   const owned: Record<string, { have: number; foil_have: number }> = {};
   for (const entry of deck.entries) {

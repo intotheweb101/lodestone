@@ -18,6 +18,15 @@ interface NzPricePanelProps {
   collectorNumber: string;
   finishes: string[];
   scryfallPrices?: Record<string, string | null>;
+  cardName?: string;
+}
+
+function tcgUrl(cardName: string, setCode: string): string {
+  return `https://www.tcgplayer.com/search/magic/product?q=${encodeURIComponent(cardName + ' ' + setCode.toUpperCase())}&view=grid`;
+}
+
+function mkUrl(cardName: string): string {
+  return `https://www.cardmarket.com/en/Magic/Products/Singles?searchString=${encodeURIComponent(cardName)}`;
 }
 
 const CONF_STYLE: Record<string, { bg: string; border: string; color: string; dot: string }> = {
@@ -27,7 +36,7 @@ const CONF_STYLE: Record<string, { bg: string; border: string; color: string; do
   none:     { bg: 'rgba(226,100,92,0.10)',  border: 'rgba(226,100,92,0.35)', color: '#d07070', dot: '#e2645c' },
 };
 
-export function NzPricePanel({ setCode, collectorNumber, finishes, scryfallPrices }: NzPricePanelProps) {
+export function NzPricePanel({ setCode, collectorNumber, finishes, scryfallPrices, cardName }: NzPricePanelProps) {
   const defaultFinish = finishes.includes('nonfoil') ? 'nonfoil' : finishes[0] ?? 'nonfoil';
   const [finish, setFinish] = useState<string>(defaultFinish);
   const [prices, setPrices] = useState<ShopPrice[] | null>(null);
@@ -86,18 +95,7 @@ export function NzPricePanel({ setCode, collectorNumber, finishes, scryfallPrice
         </div>
       ) : !prices || prices.length === 0 ? (
         <div style={{ padding: '16px', color: 'var(--text-faint)', fontSize: '12px' }}>
-          <div style={{ marginBottom: scryfallPrices ? '10px' : 0 }}>Not stocked at our tracked NZ shops for this printing.</div>
-          {scryfallPrices && (() => {
-            const usdKey = finish === 'foil' ? 'usd_foil' : finish === 'etched' ? 'usd_etched' : 'usd';
-            const usd = scryfallPrices[usdKey] ?? scryfallPrices['usd'];
-            if (!usd) return null;
-            return (
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>${usd}</span>
-                <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>USD · TCGPlayer market</span>
-              </div>
-            );
-          })()}
+          Not stocked at our tracked NZ shops for this printing.
         </div>
       ) : (
         <>
@@ -162,6 +160,50 @@ export function NzPricePanel({ setCode, collectorNumber, finishes, scryfallPrice
           </div>
         </>
       )}
+
+      {/* Persistent international reference prices (Scryfall data) */}
+      {scryfallPrices && (() => {
+        const usdKey = finish === 'foil' ? 'usd_foil' : finish === 'etched' ? 'usd_etched' : 'usd';
+        const eurKey = finish === 'foil' ? 'eur_foil' : 'eur';
+        const usd = scryfallPrices[usdKey] ?? scryfallPrices['usd'];
+        const eur = scryfallPrices[eurKey] ?? scryfallPrices['eur'];
+        if (!usd && !eur) return null;
+        return (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: 4 }}>
+              International reference
+            </div>
+            {usd && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '15px', fontWeight: 600, color: 'var(--text-muted)' }}>${usd} USD</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-faint)', marginLeft: 6 }}>TCGPlayer market</span>
+                </div>
+                {cardName && (
+                  <a href={tcgUrl(cardName, setCode)} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: '11px', color: 'var(--text-faint)', textDecoration: 'none', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    TCGPlayer ↗
+                  </a>
+                )}
+              </div>
+            )}
+            {eur && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '15px', fontWeight: 600, color: 'var(--text-muted)' }}>€{eur} EUR</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-faint)', marginLeft: 6 }}>Cardmarket</span>
+                </div>
+                {cardName && (
+                  <a href={mkUrl(cardName)} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: '11px', color: 'var(--text-faint)', textDecoration: 'none', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    Cardmarket ↗
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

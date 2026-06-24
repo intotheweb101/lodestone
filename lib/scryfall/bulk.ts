@@ -39,13 +39,16 @@ export async function loadSets(): Promise<void> {
   const sets = await getAllSets();
   const db = getDb();
   const insert = db.prepare(`
-    INSERT OR REPLACE INTO sets (code, name, name_norm, set_type, parent_set_code)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO sets (code, name, name_norm, set_type, parent_set_code, released_at, card_count, icon_svg_uri)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertAll = db.transaction(() => {
     for (const s of sets) {
       const nameNorm = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      insert.run(s.code, s.name, nameNorm, s.set_type, s.parent_set_code ?? null);
+      insert.run(
+        s.code, s.name, nameNorm, s.set_type, s.parent_set_code ?? null,
+        s.released_at ?? null, s.card_count ?? null, s.icon_svg_uri ?? null,
+      );
     }
   });
   insertAll();

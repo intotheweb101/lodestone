@@ -255,8 +255,8 @@ export default function AdminPage() {
       )}
 
       {tab === 'users' && (
-        <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '14px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '14px', overflow: 'hidden' }} className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 580 }}>
             <thead>
               <tr style={{ background: '#0c2426' }}>
                 {['User', 'Email', 'Role', 'Decks', 'Joined', ''].map(h => (
@@ -330,8 +330,8 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '14px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '14px', overflow: 'hidden' }} className="table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr style={{ background: '#0c2426' }}>
                   {['Shop', 'URL', 'Region', 'Last synced', 'Status', ''].map(h => (

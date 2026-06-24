@@ -23,6 +23,9 @@ import { getScryfallCardById, getScryfallCardsByOracleId } from '@/lib/db/querie
 import { classifyCard } from '@/lib/recommend/classify';
 import { toggleFollow, createNotification, getNotifications, getUnreadCount, markAllRead, markRead } from '@/lib/social/store';
 import type { NotificationType } from '@/lib/social/store';
+import { snapshotDeck, listVersions, restoreVersion } from '@/lib/deck/versions';
+import { listPackages, getPackageEntries, createPackage, addEntryToPackage, removeEntryFromPackage, updatePackageMeta, deletePackage } from '@/lib/packages/store';
+import { listAlerts, createAlert, deleteAlert } from '@/lib/pricing/alerts';
 
 let migrated = false;
 function ensureMigrated() {
@@ -541,6 +544,35 @@ export async function actionImportCollectionCsv(text: string, mode: ImportMode =
   return report;
 }
 
+// ─── Collection quick-paste (Arena-format bulk add) ──────────────────────────
+
+import { parseArenaList } from '@/lib/import/deck-sources';
+import type { ParsedRow } from '@/lib/collection/csv';
+
+/**
+ * Bulk-add cards to collection from a pasted Arena/MTGO list.
+ * Each line: "4 Lightning Bolt" or "1 Sol Ring (M13) 201".
+ */
+export async function actionBulkPasteToCollection(
+  text: string,
+  mode: ImportMode = 'merge',
+): Promise<ImportReport> {
+  ensureMigrated();
+  const user = await requireUser();
+  const { cards } = parseArenaList(text);
+  const rows: ParsedRow[] = cards.map(c => ({
+    name: c.name,
+    quantity: c.quantity,
+    foil: false,
+    setCode: null,
+    collectorNumber: null,
+    raw: `${c.quantity} ${c.name}`,
+  }));
+  const report = resolveAndImport(user.id, rows, { mode, formatDetected: 'paste' });
+  revalidatePath('/collection');
+  return report;
+}
+
 // ─── Phase 3: Deck tags ───────────────────────────────────────────────────────
 
 export async function actionSetDeckTags(deckId: string, tags: string[]): Promise<void> {
@@ -660,3 +692,275 @@ export async function actionMarkRead(notificationId: string): Promise<void> {
 
 // Void unused import warning
 void (null as unknown as NotificationType);
+
+// ─── Deck versions ────────────────────────────────────────────────────────────
+
+export async function actionSnapshotDeck(deckId: string, label?: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  const deck = getDeck(deckId);
+  if (!deck) throw new Error('Deck not found');
+  assertCanEdit(deck, user);
+  return snapshotDeck(deckId, label);
+}
+
+export async function actionListVersions(deckId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  const deck = getDeck(deckId);
+  if (!deck) throw new Error('Deck not found');
+  assertCanEdit(deck, user);
+  return listVersions(deckId);
+}
+
+export async function actionRestoreVersion(deckId: string, versionId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  const ok = restoreVersion(deckId, versionId, user.id);
+  if (!ok) throw new Error('Restore failed');
+  revalidatePath(`/decks/${deckId}`);
+}
+
+// ─── Card packages ────────────────────────────────────────────────────────────
+
+export async function actionListPackages() {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') return [];
+  return listPackages(user.id);
+}
+
+export async function actionGetPackageEntries(packageId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') return [];
+  return getPackageEntries(packageId);
+}
+
+export async function actionCreatePackage(name: string, description?: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  const pkg = createPackage(user.id, name, description);
+  revalidatePath('/packages');
+  return pkg;
+}
+
+export async function actionAddEntryToPackage(packageId: string, entry: {
+  oracle_id: string;
+  card_name: string;
+  quantity?: number;
+  board?: string;
+  category?: string;
+}) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  return addEntryToPackage(packageId, entry);
+}
+
+export async function actionRemoveEntryFromPackage(entryId: string, packageId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  removeEntryFromPackage(entryId, packageId);
+}
+
+export async function actionUpdatePackageMeta(id: string, name: string, description?: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  updatePackageMeta(id, user.id, name, description);
+  revalidatePath('/packages');
+}
+
+export async function actionDeletePackage(id: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  deletePackage(id, user.id);
+  revalidatePath('/packages');
+}
+
+/** Insert all entries from a package into a deck. */
+export async function actionInsertPackageToDeck(deckId: string, packageId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  const deck = getDeck(deckId);
+  if (!deck) throw new Error('Deck not found');
+  assertCanEdit(deck, user);
+
+  const entries = getPackageEntries(packageId);
+  for (const e of entries) {
+    const sc = getScryfallCardsByOracleId(e.oracle_id)[0] ?? null;
+    const autoCategory = sc ? classifyCard({ type_line: sc.type_line, oracle_text: sc.oracle_text, card_name: e.card_name }) : (e.category as Parameters<typeof addOrUpdateEntry>[1]['category'] ?? null);
+    addOrUpdateEntry(deckId, {
+      oracle_id: e.oracle_id,
+      scryfall_id: sc?.scryfall_id ?? null,
+      card_name: e.card_name,
+      quantity: e.quantity,
+      is_commander: false,
+      treatment: 'normal',
+      finish: 'nonfoil',
+      condition_floor: 'nm',
+      board: (e.board as 'main' | 'side' | 'maybe') ?? 'main',
+      category: autoCategory,
+    });
+  }
+  revalidatePath(`/decks/${deckId}`);
+  return { inserted: entries.length };
+}
+
+// ─── Price alerts ─────────────────────────────────────────────────────────────
+
+export async function actionListPriceAlerts() {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') return [];
+  return listAlerts(user.id);
+}
+
+export async function actionCreatePriceAlert(opts: {
+  oracleId: string;
+  cardName: string;
+  matchKey?: string;
+  finish?: string;
+  targetNzd: number;
+}) {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  return createAlert({ userId: user.id, ...opts });
+}
+
+export async function actionDeletePriceAlert(alertId: string) {
+  ensureMigrated();
+  const user = await requireUser();
+  deleteAlert(alertId, user.id);
+}
+
+// ─── Game logging (3A) ────────────────────────────────────────────────────────
+
+import { logGame, deleteGame } from '@/lib/games/store';
+import type { GameResult } from '@/lib/games/store';
+
+export async function actionLogGame(
+  deckId: string,
+  opts: {
+    result: GameResult;
+    turns?: number | null;
+    opponent?: string | null;
+    opponentArchetype?: string | null;
+    notes?: string | null;
+  }
+): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  const deck = getDeck(deckId);
+  if (!deck) throw new Error('Deck not found');
+  assertCanEdit(deck, user);
+  logGame(user.id, deckId, opts);
+  revalidatePath(`/decks/${deckId}`);
+}
+
+export async function actionDeleteGame(deckId: string, gameId: string): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  deleteGame(user.id, gameId);
+  revalidatePath(`/decks/${deckId}`);
+}
+
+// ─── Trade binder (3B) ────────────────────────────────────────────────────────
+
+import { setForTrade } from '@/lib/collection/store';
+
+export async function actionSetForTrade(oracleId: string, forTrade: boolean): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  setForTrade(user.id, oracleId, forTrade);
+  revalidatePath('/collection');
+  revalidatePath('/trades');
+}
+
+// ─── Card social (5A) ────────────────────────────────────────────────────────
+
+import { addCardComment, toggleCardUpvote } from '@/lib/card/social';
+
+export async function actionAddCardComment(
+  oracleId: string,
+  body: string,
+  parentId?: string
+): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  if (!body.trim()) throw new Error('Comment cannot be empty');
+  addCardComment({ oracleId, userId: user.id, body, parentId });
+  revalidatePath(`/card`);
+}
+
+export async function actionToggleCardUpvote(oracleId: string): Promise<{ upvoted: boolean }> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  return toggleCardUpvote(user.id, oracleId);
+}
+
+// ─── API keys (5C) ───────────────────────────────────────────────────────────
+
+import { randomBytes, createHash } from 'crypto';
+import { getDb as getDbDirect } from '@/lib/db/connection';
+
+export async function actionCreateApiKey(label: string): Promise<string> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  const raw = randomBytes(32).toString('hex');
+  const hash = createHash('sha256').update(raw).digest('hex');
+  const id = randomUUID();
+  const db = getDbDirect();
+  db.prepare(`
+    INSERT INTO api_keys (id, user_id, key_hash, label) VALUES (?, ?, ?, ?)
+  `).run(id, user.id, hash, label.trim() || 'My key');
+  revalidatePath('/account');
+  // Return the raw key — shown ONCE to the user, never stored in plaintext
+  return raw;
+}
+
+export async function actionRevokeApiKey(keyId: string): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  const db = getDbDirect();
+  db.prepare(
+    `UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND user_id = ?`
+  ).run(keyId, user.id);
+  revalidatePath('/account');
+}
+
+export async function actionListApiKeys(): Promise<{ id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null }[]> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') return [];
+  const db = getDbDirect();
+  return db.prepare(
+    `SELECT id, label, created_at, last_used_at, revoked_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`
+  ).all(user.id) as { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null }[];
+}
+
+export async function actionPinDeck(deckId: string | null): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required');
+  const db = getDbDirect();
+  if (deckId) {
+    // Verify caller owns the deck before pinning
+    const deck = db.prepare('SELECT user_id FROM decks WHERE id = ?').get(deckId) as { user_id: string } | undefined;
+    if (!deck || deck.user_id !== user.id) throw new Error('Not your deck');
+  }
+  db.prepare('UPDATE users SET pinned_deck_id = ? WHERE id = ?').run(deckId, user.id);
+  const u = db.prepare('SELECT username FROM users WHERE id = ?').get(user.id) as { username: string | null };
+  revalidatePath(`/u/${u.username ?? user.id}`);
+}

@@ -441,3 +441,119 @@ export function createFolder(id: string, userId: string, name: string): DeckFold
 export function deleteFolder(id: string, userId: string): void {
   getDb().prepare('DELETE FROM deck_folders WHERE id = ? AND user_id = ?').run(id, userId);
 }
+
+// ─── Metagame / reverse-lookup queries (Phase 2A) ────────────────────────────
+
+/** Public decks that contain a card (by oracle_id), ordered by likes then recency. */
+export function getDecksUsingCard(oracleId: string, limit = 20): DeckListRow[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT d.id, d.name, d.format, d.commander, d.updated_at,
+           d.user_id, d.visibility, d.public_slug, d.folder_id,
+           COALESCE(SUM(e2.quantity), 0) as card_count,
+           (SELECT COUNT(*) FROM deck_likes l WHERE l.deck_id = d.id) as like_count
+    FROM decks d
+    JOIN deck_entries e ON e.deck_id = d.id AND e.oracle_id = ?
+    LEFT JOIN deck_entries e2 ON e2.deck_id = d.id
+    WHERE d.visibility = 'public'
+    GROUP BY d.id
+    ORDER BY like_count DESC, d.updated_at DESC
+    LIMIT ?
+  `).all(oracleId, limit) as DeckListRow[];
+}
+
+export interface StapleRow {
+  oracle_id: string;
+  card_name: string;
+  deck_count: number;
+}
+
+/**
+ * Most-played cards across all public decks.
+ * Optionally filtered to a specific format (e.g. 'commander').
+ */
+export function getTopStaples(format: string | null = null, limit = 50): StapleRow[] {
+  const db = getDb();
+  const formatClause = format ? 'AND d.format = ?' : '';
+  const params: unknown[] = format ? [format, limit] : [limit];
+  return db.prepare(`
+    SELECT e.oracle_id, e.card_name, COUNT(DISTINCT d.id) as deck_count
+    FROM deck_entries e
+    JOIN decks d ON d.id = e.deck_id
+    WHERE d.visibility = 'public' ${formatClause}
+    GROUP BY e.oracle_id
+    ORDER BY deck_count DESC
+    LIMIT ?
+  `).all(...params) as StapleRow[];
+}
+
+/** Most-liked and recently updated public decks for a "trending" feed. Optionally filtered to a format. */
+export function getTrendingDecks(limit = 20, format: string | null = null): DeckListRow[] {
+  const db = getDb();
+  const formatClause = format ? 'AND d.format = ?' : '';
+  const params: unknown[] = format ? [format, limit] : [limit];
+  return db.prepare(`
+    SELECT d.id, d.name, d.format, d.commander, d.updated_at,
+           d.user_id, d.visibility, d.public_slug, d.folder_id,
+           COALESCE(SUM(e.quantity), 0) as card_count,
+           (SELECT COUNT(*) FROM deck_likes l WHERE l.deck_id = d.id) as like_count
+    FROM decks d
+    LEFT JOIN deck_entries e ON e.deck_id = d.id
+    WHERE d.visibility = 'public' ${formatClause}
+    GROUP BY d.id
+    ORDER BY like_count DESC, d.updated_at DESC
+    LIMIT ?
+  `).all(...params) as DeckListRow[];
+}
+
+/**
+ * Most-liked public decks within the last `sinceDays` days (for time-windowed leaderboards).
+ */
+export function getTrendingDecksSince(format: string | null = null, sinceDays = 30, limit = 10): DeckListRow[] {
+  const db = getDb();
+  const formatClause = format ? 'AND d.format = ?' : '';
+  const params: unknown[] = format ? [sinceDays, format, limit] : [sinceDays, limit];
+  return db.prepare(`
+    SELECT d.id, d.name, d.format, d.commander, d.updated_at,
+           d.user_id, d.visibility, d.public_slug, d.folder_id,
+           COALESCE(SUM(e.quantity), 0) as card_count,
+           COUNT(DISTINCT l.user_id) as like_count
+    FROM decks d
+    LEFT JOIN deck_entries e ON e.deck_id = d.id
+    LEFT JOIN deck_likes l ON l.deck_id = d.id
+      AND l.created_at >= datetime('now', '-' || ? || ' days')
+    WHERE d.visibility = 'public' ${formatClause}
+    GROUP BY d.id
+    HAVING like_count > 0
+    ORDER BY like_count DESC, d.updated_at DESC
+    LIMIT ?
+  `).all(...params) as DeckListRow[];
+}
+
+/**
+ * Deterministic "deck of the day" — picks the top-liked public deck
+ * whose id hashes to today's date. Falls back to the most-liked if
+ * fewer than 7 public decks exist.
+ */
+export function getDeckOfTheDay(): DeckListRow | null {
+  const db = getDb();
+  // Use SQLite date('now') as a stable daily seed: sort by ABS(CAST(SUBSTR(id,1,8) AS HEX XOR date))
+  // Simpler: pick the deck at position (day-of-year % count) sorted by like_count DESC
+  const rows = db.prepare(`
+    SELECT d.id, d.name, d.format, d.commander, d.updated_at,
+           d.user_id, d.visibility, d.public_slug, d.folder_id,
+           COALESCE(SUM(e.quantity), 0) as card_count,
+           (SELECT COUNT(*) FROM deck_likes l WHERE l.deck_id = d.id) as like_count
+    FROM decks d
+    LEFT JOIN deck_entries e ON e.deck_id = d.id
+    WHERE d.visibility = 'public'
+    GROUP BY d.id
+    HAVING like_count > 0
+    ORDER BY like_count DESC
+    LIMIT 30
+  `).all() as DeckListRow[];
+  if (!rows.length) return null;
+  // Deterministic daily rotation: use day-of-year from the DB
+  const dayRow = db.prepare(`SELECT CAST(strftime('%j', 'now') AS INTEGER) AS doy`).get() as { doy: number };
+  return rows[dayRow.doy % rows.length];
+}

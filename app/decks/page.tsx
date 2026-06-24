@@ -2,9 +2,7 @@ import { listDecks, getFolders } from '@/lib/deck/store';
 import { runMigrations } from '@/lib/db/migrations';
 import { resolveActingUser } from '@/lib/auth/session';
 import { NewDeckForm } from './new-deck-form';
-import { CloneDeckButton } from './clone-deck-button';
-import { DeleteDeckButton } from './delete-deck-button';
-import { FolderAssign } from './folder-assign';
+import { DeckListClient } from './deck-list-client';
 import { FolderManager } from '@/components/folder-manager';
 import Link from 'next/link';
 
@@ -109,74 +107,12 @@ export default async function DecksPage({ searchParams }: { searchParams: Promis
 
         {/* Deck list */}
         <div>
-          {decks.length === 0 ? (
+          {decks.length === 0 && folderFilter ? (
             <div style={{ padding: '32px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', color: 'var(--text-faint)', fontSize: '13px' }}>
-              {folderFilter ? (
-                <>No decks in this folder yet. <Link href="/decks" style={{ color: 'var(--accent)' }}>View all decks</Link> and assign them here.</>
-              ) : (
-                'Create your first deck using the form.'
-              )}
+              No decks in this folder yet. <Link href="/decks" style={{ color: 'var(--accent)' }}>View all decks</Link> and assign them here.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {decks.map(deck => (
-                <a key={deck.id} href={`/decks/${deck.id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '12px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '1rem',
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text)' }}>
-                          {deck.name}
-                        </span>
-                        {deck.commander && (
-                          <span style={{ fontSize: '12px', color: 'var(--accent)', fontStyle: 'italic' }}>
-                            {deck.commander}
-                          </span>
-                        )}
-                        {deck.visibility !== 'private' && (
-                          <VisibilityBadge visibility={deck.visibility} />
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <FormatBadge format={deck.format} />
-                        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', color: 'var(--text-faint)' }}>
-                          {deck.card_count} cards
-                        </span>
-                        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', color: 'var(--text-faint)' }}>
-                          {new Date(deck.updated_at).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}
-                        </span>
-                        {deck.like_count > 0 && (
-                          <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>❤️ {deck.like_count}</span>
-                        )}
-                        {deck.public_slug && (
-                          <a href={`/d/${deck.public_slug}`} onClick={e => e.stopPropagation()}
-                            style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>
-                            Share link ↗
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                      {folders.length > 0 && (
-                        <FolderAssign deckId={deck.id} currentFolderId={deck.folder_id} />
-                      )}
-                      <CloneDeckButton deckId={deck.id} />
-                      <DeleteDeckButton deckId={deck.id} deckName={deck.name} />
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: 'var(--text-faint)' }}>
-                        <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </div>
-                  </div>
-                </a>
-              ))}
-            </div>
+            <DeckListClient decks={decks} folders={folders} />
           )}
         </div>
       </div>
@@ -184,37 +120,3 @@ export default async function DecksPage({ searchParams }: { searchParams: Promis
   );
 }
 
-function FormatBadge({ format }: { format: string }) {
-  const colors: Record<string, string> = {
-    commander: '#e8b14a',
-    standard:  '#54c08a',
-    modern:    '#a9def9',
-    pioneer:   '#c4a8f0',
-    legacy:    '#e2645c',
-    pauper:    '#a9c0ba',
-  };
-  const color = colors[format] ?? '#a9c0ba';
-  return (
-    <span style={{
-      fontSize: '10px', padding: '2px 6px',
-      background: `${color}18`, color, borderRadius: '3px',
-      border: `1px solid ${color}33`, textTransform: 'capitalize', fontWeight: 600,
-      fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.5px',
-    }}>
-      {format}
-    </span>
-  );
-}
-
-function VisibilityBadge({ visibility }: { visibility: string }) {
-  const label = visibility === 'public' ? '🌐 Public' : '🔗 Unlisted';
-  return (
-    <span style={{
-      fontSize: '10px', padding: '2px 6px',
-      background: 'var(--surface-2)', color: 'var(--text-faint)',
-      borderRadius: 3, border: '1px solid var(--border)',
-    }}>
-      {label}
-    </span>
-  );
-}

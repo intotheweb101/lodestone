@@ -14,6 +14,13 @@ import { PriceSparkline } from '@/components/price-sparkline';
 import { buildMatchKey } from '@/lib/match/normalize';
 import { EdhrecPanel } from '@/components/edhrec-panel';
 import { WishlistAddButton } from '@/components/wishlist-add-button';
+import { PriceAlertButton } from '@/components/price-alert-button';
+import { getCurrentUser } from '@/lib/auth/session';
+import { getDecksUsingCard } from '@/lib/deck/store';
+import { getCardComments, getCardUpvotes, getUserUpvotedCard } from '@/lib/card/social';
+import { CardUpvoteButton } from '@/components/card-upvote-button';
+import { CardCommentForm } from '@/components/card-comment-form';
+import { AddToDeckButton } from '@/components/add-to-deck-button';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -183,8 +190,15 @@ export default async function CardPage({ params }: { params: Promise<{ set: stri
   const card: ScryfallCard | null = getScryfallCardBySetNumber(set, number);
   if (!card) notFound();
 
+  const currentUser = await getCurrentUser();
+  const isLoggedIn = !!currentUser && currentUser.id !== 'local';
+
   const rulings = await getRulings(card.oracle_id, card.scryfall_id);
   const printings = getScryfallCardsByOracleId(card.oracle_id);
+  const decksUsingCard = getDecksUsingCard(card.oracle_id, 12);
+  const cardComments = getCardComments(card.oracle_id);
+  const cardUpvotes = getCardUpvotes(card.oracle_id);
+  const userUpvoted = isLoggedIn ? getUserUpvotedCard(currentUser!.id, card.oracle_id) : false;
 
   const faces = card.card_faces as CardFace[] | null;
   const hasFaces = Array.isArray(faces) && faces.length >= 2;
@@ -244,15 +258,32 @@ export default async function CardPage({ params }: { params: Promise<{ set: stri
             collectorNumber={card.collector_number}
             finishes={card.finishes}
             scryfallPrices={card.prices}
+            cardName={card.name}
           />
 
-          {/* Wishlist */}
-          <WishlistAddButton
-            oracleId={card.oracle_id}
-            scryfallId={card.scryfall_id}
-            cardName={card.name}
-            finish={card.finishes.includes('nonfoil') ? 'nonfoil' : card.finishes.includes('foil') ? 'foil' : 'etched'}
-          />
+          {/* Wishlist + price alert + add to deck */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <WishlistAddButton
+              oracleId={card.oracle_id}
+              scryfallId={card.scryfall_id}
+              cardName={card.name}
+              finish={card.finishes.includes('nonfoil') ? 'nonfoil' : card.finishes.includes('foil') ? 'foil' : 'etched'}
+            />
+            <PriceAlertButton
+              oracleId={card.oracle_id}
+              cardName={card.name}
+              matchKey={buildMatchKey(card.set_code, card.collector_number, card.finishes.includes('nonfoil') ? 'nonfoil' : card.finishes.includes('foil') ? 'foil' : 'etched')}
+              finish={card.finishes.includes('nonfoil') ? 'nonfoil' : card.finishes.includes('foil') ? 'foil' : 'etched'}
+              isLoggedIn={isLoggedIn}
+            />
+            {isLoggedIn && (
+              <AddToDeckButton
+                oracleId={card.oracle_id}
+                scryfallId={card.scryfall_id}
+                cardName={card.name}
+              />
+            )}
+          </div>
 
           {/* Price history sparkline — uses the default finish (nonfoil if available) */}
           {(() => {
@@ -419,6 +450,83 @@ export default async function CardPage({ params }: { params: Promise<{ set: stri
 
           {/* EDHREC data */}
           <EdhrecPanel oracleId={card.oracle_id} cardName={card.name} />
+
+          {/* Decks using this card */}
+          {decksUsingCard.length > 0 && (
+            <div>
+              <SectionLabel>In {decksUsingCard.length} public deck{decksUsingCard.length !== 1 ? 's' : ''}</SectionLabel>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {decksUsingCard.map(d => (
+                  <Link
+                    key={d.id}
+                    href={d.public_slug ? `/d/${d.public_slug}` : `/decks/${d.id}`}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, textDecoration: 'none', color: 'var(--text)' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1 }}>{d.format}{d.commander ? ` · ${d.commander}` : ''}</div>
+                    </div>
+                    {d.like_count > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>♥ {d.like_count}</span>
+                    )}
+                  </Link>
+                ))}
+                <Link href={`/metagame?card=${encodeURIComponent(card.oracle_id)}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', marginTop: 2 }}>
+                  View all →
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Card comments & upvotes */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <SectionLabel>Discussion ({cardComments.length})</SectionLabel>
+              <CardUpvoteButton
+                oracleId={card.oracle_id}
+                initialCount={cardUpvotes}
+                initialUpvoted={userUpvoted}
+                isLoggedIn={isLoggedIn}
+              />
+            </div>
+            {cardComments.length === 0 && (
+              <p style={{ fontSize: 13, color: 'var(--text-faint)', margin: '0 0 12px' }}>
+                No comments yet.{isLoggedIn ? ' Be the first!' : ' Log in to comment.'}
+              </p>
+            )}
+            {cardComments.filter(c => !c.parent_id).map(c => (
+              <div key={c.id} style={{ borderLeft: '3px solid var(--border)', paddingLeft: 14, marginBottom: 14 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                  <strong style={{ fontSize: 12 }}>{c.user_name}</strong>
+                  <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                    {new Date(c.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                {cardComments.filter(r => r.parent_id === c.id).map(r => (
+                  <div key={r.id} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 10, marginTop: 8, marginLeft: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                      <strong style={{ fontSize: 11 }}>{r.user_name}</strong>
+                      <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{r.body}</div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {isLoggedIn && (
+              <div style={{ marginTop: 12 }}>
+                <CardCommentForm oracleId={card.oracle_id} />
+              </div>
+            )}
+            {!isLoggedIn && (
+              <p style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8 }}>
+                <Link href="/login" style={{ color: 'var(--accent)' }}>Log in</Link> to comment or upvote.
+              </p>
+            )}
+          </div>
 
           {/* Rulings */}
           {rulings.length > 0 && (

@@ -476,8 +476,8 @@ export function runMigrations(): void {
   const insert = db.prepare(`
     INSERT OR IGNORE INTO shops (id, name, base_url, dialect, collection_handles, region, currency, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  // enabled=0: Vagabond (BigCommerce), Battle Geek Plus (WooCommerce/dead domain),
-  //            Wizard's Retreat/Eternal Games/MTG Oasis (DNS dead), Good Games (no MTG singles)
+  // Dead/excluded shops (Vagabond, Battle Geek Plus, Wizard's Retreat, MTG Oasis, Good Games)
+  // are intentionally absent from seedShops — they are not seeded at all, not seeded as enabled=0.
   const seedShops: [number, string, string, string, string, string, string, number][] = [
     [1,  'Calico Keep',                'https://calicokeep.co.nz',                 'A', '["mtg-singles-instock"]',              'NZ',  'NZD', 1],
     [2,  'Shuffle n Cut',              'https://www.shuffleandcutgames.co.nz',      'A', '["mtg-singles-instock"]',              'NZ',  'NZD', 1],
@@ -575,6 +575,182 @@ export function runMigrations(): void {
     WHERE base_url = 'https://cardmerchantchristchurch.co.nz'
     AND collection_handles = '["mtg-singles-instock"]'
   `).run();
+
+  // Reverse-lookup index: allows fast "decks using this card" queries (Phase 2A)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_entries_oracle ON deck_entries(oracle_id)');
+
+  // Add note_text column to notifications for system-generated alerts (idempotent)
+  try {
+    db.exec('ALTER TABLE notifications ADD COLUMN note_text TEXT');
+  } catch { /* column already exists — no-op */ }
+
+  // ── Phase 1 feature tables ──────────────────────────────────────────────────
+
+  // Combo cache: keyed by hash of sorted card names; TTL-expired by client
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS combo_cache (
+      deck_hash  TEXT PRIMARY KEY,
+      result_json TEXT NOT NULL,
+      fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Bracket cache: same key as combo cache, separate entry
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bracket_cache (
+      deck_hash  TEXT PRIMARY KEY,
+      result_json TEXT NOT NULL,
+      fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Card packages + entries
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS card_packages (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      description TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS package_entries (
+      id          TEXT PRIMARY KEY,
+      package_id  TEXT NOT NULL REFERENCES card_packages(id) ON DELETE CASCADE,
+      oracle_id   TEXT NOT NULL,
+      card_name   TEXT NOT NULL,
+      quantity    INTEGER NOT NULL DEFAULT 1,
+      board       TEXT NOT NULL DEFAULT 'main',
+      category    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_pkg_entries_pkg ON package_entries(package_id);
+  `);
+
+  // Deck version history
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deck_versions (
+      id            TEXT PRIMARY KEY,
+      deck_id       TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+      label         TEXT,
+      snapshot_json TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_deck_versions_deck ON deck_versions(deck_id, created_at DESC);
+  `);
+
+  // Price alerts
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      oracle_id    TEXT NOT NULL,
+      card_name    TEXT NOT NULL,
+      match_key    TEXT,
+      finish       TEXT NOT NULL DEFAULT 'nonfoil',
+      target_nzd   REAL NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      triggered_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_alerts_user  ON price_alerts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_price_alerts_match ON price_alerts(match_key);
+  `);
+
+  // ── 3A: Game logging ──────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deck_games (
+      id                TEXT PRIMARY KEY,
+      deck_id           TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+      user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      result            TEXT NOT NULL,
+      turns             INTEGER,
+      opponent          TEXT,
+      opponent_archetype TEXT,
+      notes             TEXT,
+      played_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_games_deck ON deck_games(deck_id);
+    CREATE INDEX IF NOT EXISTS idx_games_user ON deck_games(user_id);
+  `);
+
+  // ── 3B: Trade binder — for_trade column on user_collection ───────────────────
+  try {
+    db.exec(`ALTER TABLE user_collection ADD COLUMN for_trade INTEGER NOT NULL DEFAULT 0`);
+  } catch { /* already exists */ }
+
+  // ── 4A: Password reset tokens ─────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at    TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id);
+  `);
+
+  // ── 5A: Card-level comments & upvotes ────────────────────────────────────────
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS card_comments (
+      id          TEXT PRIMARY KEY,
+      oracle_id   TEXT NOT NULL,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body        TEXT NOT NULL,
+      parent_id   TEXT REFERENCES card_comments(id) ON DELETE CASCADE,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_card_comments_oracle ON card_comments(oracle_id)`).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS card_upvotes (
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      oracle_id   TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, oracle_id)
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_card_upvotes_oracle ON card_upvotes(oracle_id)`).run();
+
+  // ── 5C: API keys ─────────────────────────────────────────────────────────────
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_hash     TEXT NOT NULL UNIQUE,
+      label        TEXT NOT NULL DEFAULT '',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      revoked_at   TEXT
+    )
+  `).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)`).run();
+
+  // ── 7G: Sets table extensions + released_at index ───────────────────────────
+  try { db.exec('ALTER TABLE sets ADD COLUMN released_at TEXT'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE sets ADD COLUMN card_count INTEGER'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE sets ADD COLUMN icon_svg_uri TEXT'); } catch { /* already exists */ }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_scryfall_released ON scryfall_cards(released_at DESC)');
+
+  // ── 7F: Collection value history ────────────────────────────────────────────
+  // Snapshots are written once per day by the scheduler after each sync.
+  // Cannot be backfilled — accumulates from when this migration first runs.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS collection_value_history (
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      snapshot_date TEXT NOT NULL,
+      value_usd     REAL NOT NULL,
+      card_count    INTEGER NOT NULL,
+      PRIMARY KEY (user_id, snapshot_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cvh_user ON collection_value_history(user_id, snapshot_date DESC);
+  `);
+
+  // ── User profile: pinned deck ─────────────────────────────────────────────
+  const userColsPinned = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  if (!userColsPinned.find(c => c.name === 'pinned_deck_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN pinned_deck_id TEXT REFERENCES decks(id) ON DELETE SET NULL');
+  }
 
   // Remove defunct/non-Shopify shops from existing DBs (idempotent — no-op if already gone)
   const deadUrls = [

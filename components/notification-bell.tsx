@@ -29,6 +29,7 @@ export function NotificationBell({
     like: 'liked your deck',
     comment: 'commented on your deck',
     follow: 'started following you',
+    price: '🔔 Price alert:',
   };
 
   return (
@@ -90,7 +91,10 @@ export function NotificationBell({
               >
                 <span style={{ fontWeight: 600 }}>{n.actor_name}</span>{' '}
                 <span style={{ color: 'var(--text-faint)' }}>{typeLabel[n.type] ?? n.type}</span>
-                {n.deck_name && (
+                {n.type === 'price' && n.note_text && (
+                  <span style={{ color: 'var(--text-muted)' }}> {n.note_text}</span>
+                )}
+                {n.type !== 'price' && n.deck_name && (
                   <span style={{ color: 'var(--text-muted)' }}>: {n.deck_name}</span>
                 )}
                 <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>

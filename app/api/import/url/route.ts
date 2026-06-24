@@ -1,80 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { findSource, SUPPORTED_SOURCE_LABELS } from '@/lib/import/deck-sources';
 
-interface ImportedCard {
-  name: string;
-  quantity: number;
-  is_commander: boolean;
-}
-
-interface ImportResult {
-  deckName: string;
-  cards: ImportedCard[];
-  source: string;
-}
-
-async function fetchMoxfield(publicId: string): Promise<ImportResult> {
-  const res = await fetch(`https://api.moxfield.com/v2/decks/all/${publicId}`, {
-    headers: {
-      'User-Agent': 'mtg-deck-builder/1.0 (hadlee.lineham@macroactive.com; personal deck tool)',
-      'Accept': 'application/json',
-    },
-  });
-  if (res.status === 403) {
-    throw new Error('Moxfield has blocked API access. Open the deck on Moxfield, click Export → Arena, copy the text, and paste it into the "Paste a decklist" box below.');
-  }
-  if (!res.ok) throw new Error(`Moxfield returned ${res.status}`);
-  const data = await res.json() as any;
-
-  const cards: ImportedCard[] = [];
-
-  const commanders = data.boards?.commanders?.cards ?? {};
-  for (const [, entry] of Object.entries(commanders) as any[]) {
-    cards.push({ name: entry.card?.name ?? entry.name, quantity: entry.quantity ?? 1, is_commander: true });
-  }
-
-  const mainboard = data.boards?.mainboard?.cards ?? {};
-  for (const [, entry] of Object.entries(mainboard) as any[]) {
-    cards.push({ name: entry.card?.name ?? entry.name, quantity: entry.quantity ?? 1, is_commander: false });
-  }
-
-  return { deckName: data.name ?? 'Moxfield Deck', cards, source: 'moxfield' };
-}
-
-async function fetchArchidekt(deckId: string): Promise<ImportResult> {
-  const res = await fetch(`https://archidekt.com/api/decks/${deckId}/small/`, {
-    headers: {
-      'User-Agent': 'mtg-deck-builder/1.0 (hadlee.lineham@macroactive.com)',
-      'Accept': 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`Archidekt returned ${res.status}`);
-  const data = await res.json() as any;
-
-  const cards: ImportedCard[] = (data.cards ?? []).map((c: any) => ({
-    name: c.card?.oracleCard?.name ?? c.card?.name ?? '',
-    quantity: c.quantity ?? 1,
-    is_commander: (c.categories ?? []).some((cat: string) => cat.toLowerCase() === 'commander'),
-  })).filter((c: ImportedCard) => c.name);
-
-  return { deckName: data.name ?? 'Archidekt Deck', cards, source: 'archidekt' };
-}
+const ImportUrlSchema = z.object({ url: z.string().min(1) });
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { url?: string };
-  if (!body.url) return NextResponse.json({ error: 'Missing url' }, { status: 400 });
+  const parsed = ImportUrlSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  const { url } = parsed.data;
 
-  try {
-    const moxMatch = body.url.match(/moxfield\.com\/decks\/([A-Za-z0-9_-]+)/);
-    if (moxMatch) return NextResponse.json(await fetchMoxfield(moxMatch[1]));
-
-    const archiMatch = body.url.match(/archidekt\.com\/decks\/(\d+)/);
-    if (archiMatch) return NextResponse.json(await fetchArchidekt(archiMatch[1]));
-
+  const source = findSource(url);
+  if (!source) {
     return NextResponse.json(
-      { error: 'Unsupported URL. Paste a Moxfield or Archidekt deck link.' },
+      { error: `Unsupported URL. Paste a link from: ${SUPPORTED_SOURCE_LABELS} — or use the "Paste a decklist" option.` },
       { status: 422 },
     );
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? 'Failed to fetch deck' }, { status: 500 });
+  }
+
+  try {
+    return NextResponse.json(await source.fetch(url));
+  } catch (err: unknown) {
+    // Surface friendly import errors (e.g. "site blocked — paste instead") but not raw internals
+    const msg = err instanceof Error ? err.message : 'Failed to fetch deck';
+    const isFriendly = msg.includes('paste') || msg.includes('blocked') || msg.includes('not found');
+    console.error('[import/url]', err);
+    return NextResponse.json({ error: isFriendly ? msg : 'Failed to fetch deck. Try pasting the decklist directly.' }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { getDeckBySlug } from '@/lib/deck/store';
 import { getComments, getLikeCount, getUserLiked } from '@/lib/deck/store';
+import { getWinRate } from '@/lib/games/store';
 import { getDb } from '@/lib/db/connection';
 import { runMigrations } from '@/lib/db/migrations';
 import { getCurrentUser } from '@/lib/auth/session';
@@ -13,9 +14,11 @@ import Link from 'next/link';
 import type { DeckEntry } from '@/lib/deck/model';
 import { mainboardEntries, boardEntries, isLegal } from '@/lib/deck/model';
 import { LegalityBadge } from '@/components/legality-badge';
+import { BracketBadge } from '@/components/bracket-badge';
 import { renderMarkdown } from '@/lib/markdown/render';
 import { checkLegalityWithCards } from '@/lib/deck/legality';
 import type { Metadata } from 'next';
+import { CardTooltip } from '@/components/card-tooltip';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,21 +41,40 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       type: 'article',
       siteName: 'Lodestone',
     },
-    twitter: { card: 'summary', title, description },
+    twitter: { card: 'summary_large_image', title, description },
   };
 }
 
 interface EntryWithType extends DeckEntry {
   type_line: string | null;
+  image_url: string | null;
+}
+
+function extractImageUrl(imageUrisJson: string | null, cardFacesJson: string | null): string | null {
+  if (imageUrisJson) {
+    try { return (JSON.parse(imageUrisJson) as Record<string, string>).normal ?? null; } catch { return null; }
+  }
+  if (cardFacesJson) {
+    try {
+      const faces = JSON.parse(cardFacesJson) as { image_uris?: { normal?: string } }[];
+      return faces[0]?.image_uris?.normal ?? null;
+    } catch { return null; }
+  }
+  return null;
 }
 
 function enrichWithTypeLine(entries: DeckEntry[]): EntryWithType[] {
   const db = getDb();
   return entries.map(e => {
-    const row = e.oracle_id
-      ? db.prepare('SELECT type_line FROM scryfall_cards WHERE oracle_id = ? LIMIT 1').get(e.oracle_id) as { type_line: string | null } | undefined
-      : undefined;
-    return { ...e, type_line: row?.type_line ?? null };
+    if (!e.oracle_id) return { ...e, type_line: null, image_url: null };
+    const row = db.prepare(
+      'SELECT type_line, image_uris_json, card_faces_json FROM scryfall_cards WHERE oracle_id = ? LIMIT 1'
+    ).get(e.oracle_id) as { type_line: string | null; image_uris_json: string | null; card_faces_json: string | null } | undefined;
+    return {
+      ...e,
+      type_line: row?.type_line ?? null,
+      image_url: extractImageUrl(row?.image_uris_json ?? null, row?.card_faces_json ?? null),
+    };
   });
 }
 
@@ -89,6 +111,7 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
 
   const comments = getComments(deck.id);
   const likeCount = getLikeCount(deck.id);
+  const winRate = getWinRate(deck.id);
   const isRealUser = !!user && user.id !== 'local';
   const userLiked = isRealUser ? getUserLiked(user!.id, deck.id) : false;
   // Only mainboard counts toward the deck total; sideboard/maybeboard render separately
@@ -97,8 +120,8 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
   const groups = groupByType(enriched.filter(e => !e.is_commander));
   const commander = deck.entries.find(e => e.is_commander);
   const totalCards = main.reduce((s, e) => s + e.quantity, 0);
-  const sideboard = boardEntries(deck, 'side');
-  const maybeboard = boardEntries(deck, 'maybe');
+  const enrichedSide = enrichWithTypeLine(boardEntries(deck, 'side'));
+  const enrichedMaybe = enrichWithTypeLine(boardEntries(deck, 'maybe'));
 
   const GROUP_ORDER = ['Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Planeswalker', 'Land', 'Other'];
 
@@ -128,6 +151,12 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
                 const tierB = checkLegalityWithCards(deck);
                 return <LegalityBadge legal={tierB.legal} reason={tierB.reasons[0] ?? null} />;
               })()}
+              {deck.format === 'commander' && <BracketBadge deckId={deck.id} compact />}
+              {winRate.games > 0 && (
+                <span style={{ fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", background: 'rgba(72,200,160,0.1)', border: '1px solid rgba(72,200,160,0.25)', borderRadius: 4, padding: '2px 8px', color: '#48c8a0' }}>
+                  {winRate.winPct}% win rate ({winRate.games}g)
+                </span>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -135,6 +164,18 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
               <span style={{ fontSize: 11, color: 'var(--text-faint)', padding: '4px 8px', background: 'var(--surface-2)', borderRadius: 4 }}>
                 🌐 Public
               </span>
+            )}
+            {deck.public_slug && (
+              <Link
+                href={`/decks/compare?a=${deck.public_slug}`}
+                style={{
+                  fontSize: 11, color: 'var(--text-faint)', padding: '4px 8px',
+                  background: 'var(--surface-2)', borderRadius: 4, textDecoration: 'none',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                ⇄ Compare
+              </Link>
             )}
             <LikeButton
               deckId={deck.id}
@@ -170,7 +211,7 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
               <div key={e.oracle_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 13, borderBottom: '1px solid var(--border)' }}>
                 <span>
                   {e.quantity > 1 && <span style={{ color: 'var(--text-muted, #8ba)', marginRight: 4 }}>{e.quantity}×</span>}
-                  {e.card_name}
+                  <CardTooltip imageUrl={e.image_url}>{e.card_name}</CardTooltip>
                 </span>
               </div>
             ))}
@@ -179,16 +220,16 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
       </div>
 
       {/* Sideboard */}
-      {sideboard.length > 0 && (
+      {enrichedSide.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10, color: 'var(--text-muted, #8ba)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Sideboard ({sideboard.reduce((s, e) => s + e.quantity, 0)})
+            Sideboard ({enrichedSide.reduce((s, e) => s + e.quantity, 0)})
           </h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-            {sideboard.sort((a, b) => a.card_name > b.card_name ? 1 : -1).map(e => (
+            {enrichedSide.sort((a, b) => a.card_name > b.card_name ? 1 : -1).map(e => (
               <div key={e.oracle_id} style={{ fontSize: 13, color: 'var(--text-faint)' }}>
                 {e.quantity > 1 && <span style={{ marginRight: 4 }}>{e.quantity}×</span>}
-                {e.card_name}
+                <CardTooltip imageUrl={e.image_url}>{e.card_name}</CardTooltip>
               </div>
             ))}
           </div>
@@ -196,16 +237,16 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
       )}
 
       {/* Maybeboard */}
-      {maybeboard.length > 0 && (
+      {enrichedMaybe.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10, color: 'var(--text-muted, #8ba)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Maybeboard ({maybeboard.length})
+            Maybeboard ({enrichedMaybe.length})
           </h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-            {maybeboard.sort((a, b) => a.card_name > b.card_name ? 1 : -1).map(e => (
+            {enrichedMaybe.sort((a, b) => a.card_name > b.card_name ? 1 : -1).map(e => (
               <div key={e.oracle_id} style={{ fontSize: 13, color: 'var(--text-faint)', fontStyle: 'italic' }}>
                 {e.quantity > 1 && <span style={{ marginRight: 4 }}>{e.quantity}×</span>}
-                {e.card_name}
+                <CardTooltip imageUrl={e.image_url}>{e.card_name}</CardTooltip>
               </div>
             ))}
           </div>

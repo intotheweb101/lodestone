@@ -11,8 +11,9 @@ const SEED_ALIASES: Record<string, string> = {
   // Mystical Archive (Japanese promos from Strixhaven)
   'soa': 'spm',     // shops sometimes use SOA for Secret Lair / Mystical Archive
   'sta': 'sta',     // Strixhaven Mystical Archive
-  // Tarkir Dragonstorm Special Guests
-  'stdm': 'spg',    // placeholder; actual Scryfall code TBD
+  // Tarkir: Dragonstorm Special Guests — shops use 'stdm'; Scryfall groups all Special Guest
+  // cards across sets under set code 'spg' (Special Guests supplemental set)
+  'stdm': 'spg',
   // Some shops use full set names as codes
   'dmu': 'dmu',     // Dominaria United
   'mom': 'mom',     // March of the Machine

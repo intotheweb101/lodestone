@@ -25,9 +25,15 @@ export function SharePanel({ deckId, initialVisibility, initialSlug }: SharePane
   const [visibility, setVisibility] = useState<DeckVisibility>(initialVisibility);
   const [slug, setSlug] = useState<string | null>(initialSlug);
   const [copied, setCopied] = useState(false);
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const shareUrl = slug ? `${typeof window !== 'undefined' ? window.location.origin : ''}/d/${slug}` : null;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const shareUrl = slug ? `${origin}/d/${slug}` : null;
+  const embedUrl = slug ? `${origin}/embed/${slug}` : null;
+  const embedCode = embedUrl
+    ? `<iframe src="${embedUrl}" width="800" height="600" frameborder="0" style="border:none;background:#07151a;" allowtransparency="true" title="Lodestone deck embed"></iframe>`
+    : null;
 
   function handleVisibilityChange(v: DeckVisibility) {
     if (v === visibility) return;
@@ -47,6 +53,14 @@ export function SharePanel({ deckId, initialVisibility, initialSlug }: SharePane
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function copyEmbed() {
+    if (!embedCode) return;
+    navigator.clipboard.writeText(embedCode).then(() => {
+      setCopiedEmbed(true);
+      setTimeout(() => setCopiedEmbed(false), 2500);
     });
   }
 
@@ -123,7 +137,7 @@ export function SharePanel({ deckId, initialVisibility, initialSlug }: SharePane
 
             {/* Share link */}
             {shareUrl && (
-              <div>
+              <div style={{ marginBottom: '14px' }}>
                 <div style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: '6px' }}>
                   Share link
                 </div>
@@ -162,6 +176,68 @@ export function SharePanel({ deckId, initialVisibility, initialSlug }: SharePane
                 >
                   Open public page ↗
                 </a>
+              </div>
+            )}
+
+            {/* Embed code */}
+            {embedCode && (
+              <div>
+                <div style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: '6px' }}>
+                  Embed
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    readOnly
+                    value={embedCode}
+                    style={{
+                      flex: 1, background: 'var(--surface-3)', border: '1px solid var(--border)',
+                      borderRadius: '6px', padding: '6px 10px', fontSize: '10px',
+                      color: 'var(--text-muted)', fontFamily: "'IBM Plex Mono', monospace",
+                      outline: 'none', overflow: 'hidden', textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onFocus={e => e.target.select()}
+                  />
+                  <button
+                    onClick={copyEmbed}
+                    style={{
+                      padding: '6px 12px', borderRadius: '6px',
+                      background: copiedEmbed ? 'rgba(84,192,138,0.15)' : 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      color: copiedEmbed ? 'var(--green)' : 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                      transition: 'all 0.15s',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {copiedEmbed ? '✓' : 'Copy'}
+                  </button>
+                </div>
+                <a
+                  href={embedUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'block', marginTop: '8px', fontSize: '11.5px', color: 'var(--text-faint)', textDecoration: 'none', fontFamily: "'IBM Plex Mono', monospace" }}
+                >
+                  Preview embed ↗
+                </a>
+              </div>
+            )}
+
+            {/* QR code */}
+            {shareUrl && (
+              <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: '8px' }}>
+                  QR code
+                </div>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&bgcolor=07151a&color=e8b14a&data=${encodeURIComponent(shareUrl)}`}
+                  alt="QR code for deck link"
+                  width={140}
+                  height={140}
+                  style={{ display: 'block', borderRadius: '8px', border: '1px solid var(--border)' }}
+                />
               </div>
             )}
 

@@ -6,6 +6,8 @@ import type { EdhrecCardData } from '@/lib/edhrec/client';
 interface EdhrecPanelProps {
   oracleId: string;
   cardName: string;
+  /** Called when user clicks "Add" on a synergy card. Card name is passed. */
+  onAddCard?: (cardName: string) => void;
 }
 
 function SaltBar({ salt }: { salt: number }) {
@@ -31,7 +33,7 @@ function SaltBar({ salt }: { salt: number }) {
   );
 }
 
-export function EdhrecPanel({ oracleId, cardName }: EdhrecPanelProps) {
+export function EdhrecPanel({ oracleId, cardName, onAddCard }: EdhrecPanelProps) {
   const [data, setData] = useState<EdhrecCardData | null | 'loading'>('loading');
 
   useEffect(() => {
@@ -142,21 +144,34 @@ export function EdhrecPanel({ oracleId, cardName }: EdhrecPanelProps) {
             <div style={{ fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>
               High synergy cards
             </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {data.synergy_cards.slice(0, 8).map((c, i) => (
-                <a key={i}
-                  href={`/search?q=${encodeURIComponent(c.name)}`}
-                  title={`${c.name} — synergy ${c.synergy > 0 ? '+' : ''}${(c.synergy * 100).toFixed(0)}%`}
-                  style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', width: '60px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {data.synergy_cards.slice(0, 10).map((c, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                   {c.image ? (
-                    <img src={c.image} alt={c.name} style={{ width: '60px', height: '42px', objectFit: 'cover', borderRadius: '5px', border: '1px solid var(--border)' }} />
+                    <img src={c.image} alt={c.name} style={{ width: '32px', height: '23px', objectFit: 'cover', borderRadius: '3px', border: '1px solid var(--border)', flexShrink: 0 }} />
                   ) : (
-                    <div style={{ width: '60px', height: '42px', borderRadius: '5px', background: 'var(--surface-2)', border: '1px solid var(--border)' }} />
+                    <div style={{ width: '32px', height: '23px', borderRadius: '3px', background: 'var(--surface-2)', border: '1px solid var(--border)', flexShrink: 0 }} />
                   )}
-                  <span style={{ fontSize: '9px', color: 'var(--text-faint)', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                  <a href={`/search?q=${encodeURIComponent(c.name)}`} style={{ flex: 1, fontSize: '12px', color: 'var(--text)', textDecoration: 'none', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                     {c.name}
+                  </a>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '10px', color: c.synergy > 0 ? '#54c08a' : 'var(--text-faint)', flexShrink: 0 }}>
+                    {c.synergy > 0 ? '+' : ''}{(c.synergy * 100).toFixed(0)}%
                   </span>
-                </a>
+                  {onAddCard && (
+                    <button
+                      onClick={() => onAddCard(c.name)}
+                      title={`Add ${c.name} to deck`}
+                      style={{
+                        padding: '2px 7px', fontSize: '10px', borderRadius: 4,
+                        background: 'rgba(84,192,138,0.12)', border: '1px solid rgba(84,192,138,0.35)',
+                        color: '#54c08a', cursor: 'pointer', flexShrink: 0, fontWeight: 600,
+                      }}
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </div>

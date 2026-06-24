@@ -1,22 +1,42 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { DeckEntry } from '@/lib/deck/model';
 import { oddsOfDrawingByTurn } from '@/lib/deck/hypergeometric';
+import { actionLogGame } from '@/app/actions';
+import type { GameResult } from '@/lib/games/store';
+
+interface CardItem {
+  name: string;
+  isLand: boolean;
+}
 
 interface Props {
   entries: DeckEntry[];
   deckName: string;
+  deckId: string;
   onClose: () => void;
 }
 
-function buildLibrary(entries: DeckEntry[]): string[] {
-  return entries
-    .filter(e => !e.board || e.board === 'main')
-    .flatMap(e => Array.from({ length: e.quantity }, () => e.card_name));
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const LAND_REGEX = /plains|island|swamp|mountain|forest|wastes|snow-covered|command tower|temple of|triome|tri-land/i;
+
+function isLandEntry(entry: DeckEntry): boolean {
+  if (entry.category === 'Lands') return true;
+  return LAND_REGEX.test(entry.card_name);
 }
 
-function shuffled(arr: string[]): string[] {
+function buildLibrary(entries: DeckEntry[]): CardItem[] {
+  return entries
+    .filter(e => !e.board || e.board === 'main')
+    .flatMap(e => Array.from({ length: e.quantity }, () => ({
+      name: e.card_name,
+      isLand: isLandEntry(e),
+    })));
+}
+
+function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -25,41 +45,111 @@ function shuffled(arr: string[]): string[] {
   return a;
 }
 
-export function PlaytestModal({ entries, deckName, onClose }: Props) {
-  const allCards = buildLibrary(entries);
+/** Auto-bottom N cards from a 7-card hand using a simple heuristic:
+ *  - If hand has > 4 lands → bottom excess lands first
+ *  - Else if hand has < 2 lands → bottom excess spells (keep remaining lands)
+ *  - Else → bottom last N (arbitrary)
+ */
+function autoBottom(hand: CardItem[], n: number): CardItem[] {
+  if (n <= 0) return hand;
+  const lands = hand.filter(c => c.isLand);
+  const spells = hand.filter(c => !c.isLand);
 
-  const [hand, setHand] = useState<string[]>(() => {
-    const s = shuffled(allCards);
-    return s.slice(0, 7);
-  });
-  const [library, setLibrary] = useState<string[]>(() => {
-    const s = shuffled(allCards);
-    return s.slice(7);
-  });
+  let toRemove: CardItem[];
+  if (lands.length > 4) {
+    // Flooded — bottom extra lands
+    toRemove = lands.slice(0, n);
+  } else if (lands.length < 2) {
+    // Screwed — bottom excess spells
+    toRemove = spells.slice(0, n);
+  } else {
+    // Balanced — bottom last N cards
+    toRemove = hand.slice(-n);
+  }
+
+  const result = [...hand];
+  for (const card of toRemove) {
+    const idx = result.indexOf(card);
+    if (idx !== -1) result.splice(idx, 1);
+  }
+  return result;
+}
+
+interface HandStats {
+  landDistribution: number[]; // index = land count, value = probability
+  pKeepable: number;          // P(2–4 lands in 7-card opener)
+  avgLands: number;
+}
+
+/** Monte-Carlo over `iterations` 7-card openers. ~2ms for 1000 iterations. */
+function computeHandStats(library: CardItem[], iterations = 1500): HandStats {
+  if (!library.length) return { landDistribution: [], pKeepable: 0, avgLands: 0 };
+
+  const counts = new Array(8).fill(0); // 0..7 lands
+  for (let i = 0; i < iterations; i++) {
+    const s = shuffle(library);
+    const hand = s.slice(0, 7);
+    const landCount = Math.min(7, hand.filter(c => c.isLand).length);
+    counts[landCount]++;
+  }
+
+  const landDistribution = counts.map(c => c / iterations);
+  const pKeepable = (counts[2] + counts[3] + counts[4]) / iterations;
+  const avgLands = landDistribution.reduce((s, p, i) => s + p * i, 0);
+
+  return { landDistribution, pKeepable, avgLands };
+}
+
+// ─── Component ──────────────────────────────────────────────────────────────
+
+export function PlaytestModal({ entries, deckName, deckId, onClose }: Props) {
+  const allCards = useMemo(() => buildLibrary(entries), [entries]);
+  const handStats = useMemo(() => computeHandStats(allCards), [allCards]);
+
+  const [hand, setHand] = useState<CardItem[]>(() => shuffle(allCards).slice(0, 7));
+  const [library, setLibrary] = useState<CardItem[]>(() => shuffle(allCards).slice(7));
   const [mulligans, setMulligans] = useState(0);
   const [turn, setTurn] = useState(1);
   const [tapped, setTapped] = useState<Set<number>>(new Set());
   const [showOdds, setShowOdds] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const [oddsCopies, setOddsCopies] = useState(4);
   const [oddsMinCopies, setOddsMinCopies] = useState(1);
 
-  function deal(n: number) {
-    const s = shuffled(allCards);
-    setHand(s.slice(0, n));
-    setLibrary(s.slice(n));
+  // Logging
+  const [logResult, setLogResult] = useState<GameResult | null>(null);
+  const [logTurns, setLogTurns] = useState<string>('');
+  const [logOpponent, setLogOpponent] = useState('');
+  const [logArchetype, setLogArchetype] = useState('');
+  const [logPending, setLogPending] = useState(false);
+  const [logSent, setLogSent] = useState(false);
+
+  function deal(n: number, muls = mulligans) {
+    const s = shuffle(allCards);
+    const raw7 = s.slice(0, 7);
+    const hand = muls > 0 ? autoBottom(raw7, muls) : raw7;
+    setHand(hand);
+    setLibrary(s.slice(7));
     setTapped(new Set());
   }
 
   function newGame() {
-    deal(7);
+    deal(7, 0);
     setMulligans(0);
     setTurn(1);
+    setLogResult(null);
+    setLogSent(false);
+    setLogTurns('');
+    setLogOpponent('');
+    setLogArchetype('');
   }
 
   function mulligan() {
-    const next = Math.max(0, 7 - mulligans - 1);
-    deal(next);
-    setMulligans(m => m + 1);
+    const nextMuls = mulligans + 1;
+    const nextHandSize = Math.max(0, 7 - nextMuls);
+    if (nextHandSize === 0) return;
+    setMulligans(nextMuls);
+    deal(nextHandSize, nextMuls);
   }
 
   function draw() {
@@ -82,8 +172,24 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
     });
   }
 
-  const isLand = (name: string) =>
-    /plains|island|swamp|mountain|forest|wastes|snow-covered|command tower|temple of|triome|tri-land/i.test(name);
+  async function handleLogGame() {
+    if (!logResult) return;
+    setLogPending(true);
+    try {
+      await actionLogGame(deckId, {
+        result: logResult,
+        turns: logTurns ? parseInt(logTurns, 10) : undefined,
+        opponent: logOpponent || undefined,
+        opponentArchetype: logArchetype || undefined,
+      });
+      setLogSent(true);
+    } catch {}
+    setLogPending(false);
+  }
+
+  const landCount = hand.filter(c => c.isLand).length;
+  const deckLandCount = allCards.filter(c => c.isLand).length;
+  const nextHandSize = Math.max(0, 7 - mulligans - 1);
 
   return (
     <div style={{
@@ -109,6 +215,7 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
             <div style={{ fontSize: '11px', color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: '2px' }}>
               Turn {turn} · Hand {hand.length} · Library {library.length}
               {mulligans > 0 && ` · ${mulligans} mulligan${mulligans > 1 ? 's' : ''}`}
+              {mulligans > 0 && ` (London — auto-bottomed ${mulligans})`}
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -124,7 +231,7 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
         }}>
           {[
             { label: '▶ New game', action: newGame },
-            { label: `↩ Mulligan to ${Math.max(0, 7 - mulligans - 1)}`, action: mulligan, disabled: 7 - mulligans - 1 <= 0 },
+            { label: `↩ Mulligan to ${nextHandSize}`, action: mulligan, disabled: nextHandSize <= 0 },
             { label: '+ Draw', action: draw, disabled: library.length === 0 },
             { label: `→ End turn ${turn}`, action: nextTurn, disabled: library.length === 0 },
           ].map(({ label, action, disabled }) => (
@@ -149,18 +256,17 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
             color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace",
             marginBottom: '10px',
           }}>
-            Hand ({hand.length})
+            Hand ({hand.length}) · {landCount} land{landCount !== 1 ? 's' : ''}
+            {landCount < 2 && <span style={{ color: '#e2645c', marginLeft: 8 }}>⚠ land-light</span>}
+            {landCount > 4 && <span style={{ color: '#e09a3a', marginLeft: 8 }}>⚠ flooded</span>}
           </div>
           {hand.length === 0 ? (
             <div style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '20px 0', textAlign: 'center' }}>
               No cards in hand
             </div>
           ) : (
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '8px',
-            }}>
-              {hand.map((name, i) => {
-                const land = isLand(name);
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {hand.map((card, i) => {
                 const tap = tapped.has(i);
                 return (
                   <button
@@ -171,10 +277,10 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
                       padding: '8px 12px',
                       borderRadius: '8px',
                       background: tap
-                        ? (land ? 'rgba(84,192,138,0.08)' : 'rgba(232,177,74,0.06)')
-                        : (land ? 'rgba(84,192,138,0.15)' : 'rgba(232,177,74,0.12)'),
-                      border: `1px solid ${tap ? '#1f4c4a' : (land ? 'rgba(84,192,138,0.4)' : 'rgba(232,177,74,0.35)')}`,
-                      color: tap ? 'var(--text-faint)' : (land ? '#7fd6a6' : 'var(--accent)'),
+                        ? (card.isLand ? 'rgba(84,192,138,0.08)' : 'rgba(232,177,74,0.06)')
+                        : (card.isLand ? 'rgba(84,192,138,0.15)' : 'rgba(232,177,74,0.12)'),
+                      border: `1px solid ${tap ? '#1f4c4a' : (card.isLand ? 'rgba(84,192,138,0.4)' : 'rgba(232,177,74,0.35)')}`,
+                      color: tap ? 'var(--text-faint)' : (card.isLand ? '#7fd6a6' : 'var(--accent)'),
                       fontSize: '12px', fontWeight: 600,
                       cursor: 'pointer',
                       transform: tap ? 'rotate(3deg)' : 'none',
@@ -184,10 +290,8 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
                       maxWidth: '160px',
                       opacity: tap ? 0.6 : 1,
                     }}>
-                    {name}
-                    {land && (
-                      <span style={{ display: 'block', fontSize: '9px', marginTop: '2px', opacity: 0.7 }}>Land</span>
-                    )}
+                    {card.name}
+                    {card.isLand && <span style={{ display: 'block', fontSize: '9px', marginTop: '2px', opacity: 0.7 }}>Land</span>}
                   </button>
                 );
               })}
@@ -195,34 +299,72 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
           )}
         </div>
 
-        {/* Deck stats */}
+        {/* Stats bar */}
         <div style={{
           padding: '10px 20px 8px',
           display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center',
           borderTop: '1px solid #1f4c4a',
         }}>
           <div style={{ fontSize: '11px', color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
-            {allCards.length} cards
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
-            {allCards.filter(c => isLand(c)).length} lands
+            {allCards.length} cards · {deckLandCount} lands ({Math.round(deckLandCount / allCards.length * 100)}%)
           </div>
           {tapped.size > 0 && (
             <div style={{ fontSize: '11px', color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
               {tapped.size} tapped
             </div>
           )}
-          <button
-            onClick={() => setShowOdds(v => !v)}
-            style={{
-              marginLeft: 'auto', fontSize: 11, background: showOdds ? 'var(--surface-3)' : 'none',
-              border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text-faint)',
-              cursor: 'pointer', padding: '3px 10px', fontFamily: "'IBM Plex Sans', sans-serif",
-            }}
-          >
-            Draw odds
-          </button>
+          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+            <button onClick={() => { setShowStats(v => !v); setShowOdds(false); }}
+              style={{ fontSize: 11, background: showStats ? 'var(--surface-3)' : 'none', border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text-faint)', cursor: 'pointer', padding: '3px 10px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              Opening stats
+            </button>
+            <button onClick={() => { setShowOdds(v => !v); setShowStats(false); }}
+              style={{ fontSize: 11, background: showOdds ? 'var(--surface-3)' : 'none', border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text-faint)', cursor: 'pointer', padding: '3px 10px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              Draw odds
+            </button>
+          </div>
         </div>
+
+        {/* Opening-hand statistics (Monte-Carlo) */}
+        {showStats && (
+          <div style={{ padding: '14px 20px 16px', borderTop: '1px solid #1f4c4a', background: '#081a1b' }}>
+            <div style={{ fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>
+              Opening Hand Statistics (1500 simulated openers)
+            </div>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>Avg lands in opener</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", color: 'var(--accent)' }}>
+                  {handStats.avgLands.toFixed(1)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>P(keepable: 2–4 lands)</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", color: handStats.pKeepable >= 0.6 ? '#7fd6a6' : handStats.pKeepable >= 0.4 ? 'var(--accent)' : '#e2645c' }}>
+                  {(handStats.pKeepable * 100).toFixed(0)}%
+                </div>
+              </div>
+            </div>
+            {/* Land distribution bars */}
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>Land count distribution</div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 48 }}>
+              {handStats.landDistribution.slice(0, 8).map((p, i) => (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{
+                    width: '100%', borderRadius: 3,
+                    height: Math.max(2, p * 44),
+                    background: (i >= 2 && i <= 4) ? '#54c08a' : i === 0 || i >= 5 ? '#e2645c' : '#e0913a',
+                    opacity: 0.8,
+                  }} />
+                  <span style={{ fontSize: 9, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono',monospace" }}>{i}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6 }}>
+              Green = keepable (2–4) · Orange = marginal · Red = unkeepable
+            </div>
+          </div>
+        )}
 
         {/* Hypergeometric odds panel */}
         {showOdds && (
@@ -263,6 +405,53 @@ export function PlaytestModal({ entries, deckName, onClose }: Props) {
             </div>
           </div>
         )}
+
+        {/* Log goldfish game */}
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #1f4c4a', background: '#081a1b' }}>
+          <div style={{ fontSize: '10px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 10 }}>
+            Log this game
+          </div>
+          {logSent ? (
+            <div style={{ fontSize: 13, color: '#7fd6a6' }}>✓ Game logged — it will appear in your Games tab.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(['win', 'loss', 'draw'] as GameResult[]).map(r => (
+                  <button key={r} onClick={() => setLogResult(r)} style={{
+                    padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
+                    background: logResult === r ? (r === 'win' ? 'rgba(84,192,138,0.2)' : r === 'loss' ? 'rgba(226,100,92,0.2)' : 'rgba(232,177,74,0.15)') : '#0c2426',
+                    border: `1px solid ${logResult === r ? (r === 'win' ? '#54c08a' : r === 'loss' ? '#e2645c' : 'var(--accent)') : '#1f4c4a'}`,
+                    color: logResult === r ? (r === 'win' ? '#7fd6a6' : r === 'loss' ? '#e2645c' : 'var(--accent)') : 'var(--text-faint)',
+                  }}>
+                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input type="number" min={1} placeholder={`Turns (${turn})`} value={logTurns}
+                  onChange={e => setLogTurns(e.target.value)}
+                  style={{ width: 90, background: '#0e2426', border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text)', padding: '5px 8px', fontSize: 12, outline: 'none' }} />
+                <input type="text" placeholder="Opponent name (optional)" value={logOpponent}
+                  onChange={e => setLogOpponent(e.target.value)}
+                  style={{ flex: 1, minWidth: 120, background: '#0e2426', border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text)', padding: '5px 8px', fontSize: 12, outline: 'none', fontFamily: "'IBM Plex Sans',sans-serif" }} />
+                <input type="text" placeholder="Archetype (optional)" value={logArchetype}
+                  onChange={e => setLogArchetype(e.target.value)}
+                  style={{ flex: 1, minWidth: 120, background: '#0e2426', border: '1px solid #1f4c4a', borderRadius: 6, color: 'var(--text)', padding: '5px 8px', fontSize: 12, outline: 'none', fontFamily: "'IBM Plex Sans',sans-serif" }} />
+              </div>
+              <button onClick={handleLogGame} disabled={!logResult || logPending} style={{
+                alignSelf: 'flex-start', padding: '7px 18px', borderRadius: 8,
+                background: logResult ? 'var(--accent)' : '#0c2426',
+                color: logResult ? '#0a1f22' : 'var(--text-faint)',
+                border: 'none', cursor: !logResult || logPending ? 'default' : 'pointer',
+                fontSize: 13, fontWeight: 700, fontFamily: "'IBM Plex Sans',sans-serif",
+                opacity: !logResult || logPending ? 0.5 : 1,
+              }}>
+                {logPending ? 'Logging…' : 'Log game'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

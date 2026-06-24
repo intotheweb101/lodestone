@@ -22,7 +22,17 @@ export type FilterField =
   | 'format'
   | 'set'
   | 'is'
-  | 'keyword';
+  | 'keyword'
+  | 'price_usd'
+  | 'price_eur'
+  | 'artist'
+  | 'flavor'
+  | 'year'
+  | 'banned'
+  | 'restricted'
+  | 'cn'
+  | 'border'
+  | 'frame';
 
 export interface SearchTerm {
   field: FilterField;
@@ -33,7 +43,7 @@ export interface SearchTerm {
 
 export interface ParsedQuery {
   terms: SearchTerm[];
-  order: { key: 'name' | 'cmc' | 'price'; dir: 'asc' | 'desc' } | null;
+  order: { key: 'name' | 'cmc' | 'price' | 'released'; dir: 'asc' | 'desc' } | null;
   errors: string[];  // unrecognised keys — surfaced in UI but non-fatal
 }
 
@@ -76,11 +86,30 @@ const KEY_TO_FIELD: Record<string, FilterField> = {
   s: 'set', e: 'set', set: 'set',
   is: 'is',
   kw: 'keyword', keyword: 'keyword', keywords: 'keyword',
+  // Price filters
+  usd: 'price_usd', price: 'price_usd',
+  eur: 'price_eur',
+  // Card detail filters
+  art: 'artist', artist: 'artist',
+  ft: 'flavor', flavor: 'flavor', flavortext: 'flavor',
+  year: 'year',
+  // Format legality
+  banned: 'banned',
+  restricted: 'restricted',
+  // Printing filters
+  cn: 'cn', number: 'cn', collector: 'cn',
+  border: 'border',
+  frame: 'frame',
 };
 
-const NUMERIC_FIELDS: Set<FilterField> = new Set(['mv', 'pow', 'tou', 'loy']);
-const ORDER_KEYS: Record<string, 'name' | 'cmc' | 'price'> = {
-  name: 'name', cmc: 'cmc', mv: 'cmc', manavalue: 'cmc', price: 'price',
+const NUMERIC_FIELDS: Set<FilterField> = new Set([
+  'mv', 'pow', 'tou', 'loy',
+  'price_usd', 'price_eur', 'year', 'cn',
+]);
+const ORDER_KEYS: Record<string, 'name' | 'cmc' | 'price' | 'released'> = {
+  name: 'name', cmc: 'cmc', mv: 'cmc', manavalue: 'cmc',
+  price: 'price', usd: 'price', eur: 'price',
+  released: 'released', date: 'released',
 };
 
 // ── Tokenizer ─────────────────────────────────────────────────────────────────
@@ -254,6 +283,10 @@ function fieldToKey(field: FilterField): string {
     name: '', type: 't', oracle: 'o', colors: 'c', identity: 'id',
     mv: 'mv', pow: 'pow', tou: 'tou', loy: 'loy',
     rarity: 'r', format: 'f', set: 's', is: 'is', keyword: 'kw',
+    price_usd: 'usd', price_eur: 'eur',
+    artist: 'art', flavor: 'ft', year: 'year',
+    banned: 'banned', restricted: 'restricted',
+    cn: 'cn', border: 'border', frame: 'frame',
   };
   return MAP[field] ?? field;
 }

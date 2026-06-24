@@ -143,4 +143,7 @@ export interface ScryfallSet {
   name: string;
   set_type: string;
   parent_set_code?: string;
+  released_at?: string;
+  card_count?: number;
+  icon_svg_uri?: string;
 }

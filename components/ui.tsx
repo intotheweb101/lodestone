@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { CardTooltip } from './card-tooltip';
 
 // ── Mana pip ─────────────────────────────────────────────────────────────────
 
@@ -182,6 +183,7 @@ export function DeckEntryRow({
   typeLine,
   colorIdentity,
   imageUrl,
+  hoverImageUrl,
   manaCost,
   treatment,
   bestPrice,
@@ -198,6 +200,7 @@ export function DeckEntryRow({
   typeLine?: string | null;
   colorIdentity?: string[];
   imageUrl?: string | null;
+  hoverImageUrl?: string | null;
   manaCost?: string | null;
   treatment?: string;
   bestPrice?: number | null;
@@ -271,7 +274,7 @@ export function DeckEntryRow({
         {quantity}×
       </span>
 
-      {/* Card name — clickable */}
+      {/* Card name — clickable; tooltip on hover when image URL is available */}
       <span
         onClick={onCardClick}
         title={onCardClick ? `View ${name}` : undefined}
@@ -282,7 +285,7 @@ export function DeckEntryRow({
           cursor: onCardClick ? 'pointer' : 'default',
         }}
       >
-        {name}
+        <CardTooltip imageUrl={imageUrl ?? hoverImageUrl}>{name}</CardTooltip>
       </span>
 
       {/* Treatment badge */}
