@@ -535,6 +535,20 @@ export function DeckBuilderClient({ deck: initialDeck, shopMeta }: { deck: Deck;
             <Btn onClick={() => setShowPlaytest(true)} disabled={mainboard.length === 0 && !commander}>
               ▶ Playtest
             </Btn>
+            <a
+              href={`/proxy?deck=${deck.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                padding: '7px 14px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600,
+                background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)',
+                textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                fontFamily: "'IBM Plex Sans', sans-serif",
+              }}
+            >
+              🖨 Proxies
+            </a>
             <Btn onClick={handleClone} disabled={cloningDeck}>
               {cloningDeck ? 'Cloning…' : '⊕ Clone'}
             </Btn>

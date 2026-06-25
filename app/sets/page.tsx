@@ -58,28 +58,55 @@ export default async function SetsPage() {
         </p>
       </div>
 
-      {/* Upcoming / spoilers */}
-      {upcoming.length > 0 && (
-        <section style={{ marginBottom: '2.5rem' }}>
-          <SectionHeading label="Upcoming" accent />
-          <SetGrid sets={upcoming} />
-        </section>
-      )}
+      {all.length === 0 ? (
+        <div style={{
+          textAlign: 'center', padding: '56px 24px',
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px',
+        }}>
+          <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '6px' }}>
+            No sets in database yet
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-faint)', marginBottom: '16px' }}>
+            Run a Scryfall sync from the admin panel to populate sets and cards.
+          </div>
+          <a
+            href="/admin"
+            style={{
+              display: 'inline-block', padding: '8px 20px', borderRadius: '8px',
+              background: 'var(--accent)', color: '#0a1f22',
+              fontWeight: 700, fontSize: '13px', textDecoration: 'none',
+            }}
+          >
+            Go to Admin →
+          </a>
+        </div>
+      ) : (
+        <>
+          {/* Upcoming / spoilers */}
+          {upcoming.length > 0 && (
+            <section style={{ marginBottom: '2.5rem' }}>
+              <SectionHeading label="Upcoming" accent />
+              <SetGrid sets={upcoming} />
+            </section>
+          )}
 
-      {/* Main sets */}
-      {recent.length > 0 && (
-        <section style={{ marginBottom: '2.5rem' }}>
-          <SectionHeading label="Sets & Expansions" />
-          <SetGrid sets={recent} />
-        </section>
-      )}
+          {/* Main sets */}
+          {recent.length > 0 && (
+            <section style={{ marginBottom: '2.5rem' }}>
+              <SectionHeading label="Sets & Expansions" />
+              <SetGrid sets={recent} />
+            </section>
+          )}
 
-      {/* Everything else */}
-      {other.length > 0 && (
-        <section>
-          <SectionHeading label="Other Products" />
-          <SetGrid sets={other} />
-        </section>
+          {/* Everything else */}
+          {other.length > 0 && (
+            <section>
+              <SectionHeading label="Other Products" />
+              <SetGrid sets={other} />
+            </section>
+          )}
+        </>
       )}
     </div>
   );
