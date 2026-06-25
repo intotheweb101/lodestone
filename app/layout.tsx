@@ -30,12 +30,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Pirata+One&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
+        {/* Inline in <head> so it runs before first paint — prevents theme flash */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('lodestone-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})()`}} />
       </head>
       <body style={{ display: 'flex', minHeight: '100dvh', background: 'var(--bg)' }}>
-        {/* Theme: runs before paint to prevent flash */}
-        <Script id="theme-init" strategy="beforeInteractive">{`(function(){try{var t=localStorage.getItem('lodestone-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})()`}</Script>
-        {/* Service worker */}
-        <Script id="sw-register" strategy="afterInteractive">{`if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});})}`}</Script>
+        {/* Service worker — dangerouslySetInnerHTML avoids React 19 inline-script warning */}
+        <Script id="sw-register" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});})}`}} />
         <AuthProvider>
           <CommandPalette />
           {/* Desktop sidebar — hidden on mobile via CSS class */}
