@@ -1,7 +1,8 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
+const DICE_HISTORY_KEY = 'lodestone-dice-history';
 
 interface RollResult {
   faces: number[];
@@ -22,8 +23,17 @@ export function DiceRoller() {
   const [modifier, setModifier] = useState(0);
   const [animFaces, setAnimFaces] = useState<number[] | null>(null);
   const [result, setResult] = useState<RollResult | null>(null);
-  const [history, setHistory] = useState<RollResult[]>([]);
+  const [history, setHistory] = useState<RollResult[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem(DICE_HISTORY_KEY) : null;
+      return saved ? (JSON.parse(saved) as RollResult[]) : [];
+    } catch { return []; }
+  });
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(DICE_HISTORY_KEY, JSON.stringify(history)); } catch { /* ignore */ }
+  }, [history]);
 
   const effectiveSides = customSides ? Math.max(2, parseInt(customSides) || 6) : sides;
 

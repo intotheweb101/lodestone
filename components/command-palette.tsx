@@ -26,6 +26,8 @@ const BASE_ITEMS: PaletteItem[] = [
   { id: 'collection', label: 'Collection',       hint: 'Cards you own',                 group: 'My Stuff', href: '/collection' },
   { id: 'wishlist',   label: 'Wishlist',         hint: 'Cards you want',                group: 'My Stuff', href: '/wishlist' },
   { id: 'new-deck',   label: 'New Deck',         hint: 'Start building a new deck',     group: 'Actions',  href: '/decks' },
+  { id: 'play',       label: 'Play',             hint: 'Life counter & play tools',     group: 'Play',     href: '/play' },
+  { id: 'planechase', label: 'Planechase',       hint: 'Planar die & planar deck',      group: 'Play',     href: '/play' },
   { id: 'sync',       label: 'Sync Data',        hint: 'Refresh shop prices & cards',   group: 'System',   href: '/sync' },
 ];
 

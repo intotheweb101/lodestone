@@ -108,7 +108,7 @@ export function ToolBar() {
         ref={barRef}
         style={{
           position: 'fixed',
-          bottom: 16,
+          bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',

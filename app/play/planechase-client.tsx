@@ -1,6 +1,15 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+const PC_KEY = 'lodestone-planechase-state';
+
+interface PersistedPlanechase {
+  phase: GamePhase;
+  currentCard: PlaneCard | null;
+  remaining: PlaneCard[];
+  history: PlaneCard[];
+}
+
 interface PlaneCard {
   scryfall_id: string;
   name: string;
@@ -51,6 +60,35 @@ export function PlanechaseClient() {
   const [rollingFace, setRollingFace] = useState<DieResult>('blank');
   const rollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Restore persisted game state on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PC_KEY);
+      if (saved) {
+        const s = JSON.parse(saved) as PersistedPlanechase;
+        if (s.phase && s.phase !== 'idle') {
+          setPhase(s.phase === 'rolling' ? 'playing' : s.phase);
+          setCurrentCard(s.currentCard);
+          setRemaining(s.remaining);
+          setHistory(s.history);
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }, []);
+
+  // Persist game state whenever it changes
+  useEffect(() => {
+    if (phase === 'rolling') return; // don't persist mid-roll transient state
+    try {
+      if (phase === 'idle') {
+        localStorage.removeItem(PC_KEY);
+      } else {
+        const s: PersistedPlanechase = { phase, currentCard, remaining, history };
+        localStorage.setItem(PC_KEY, JSON.stringify(s));
+      }
+    } catch { /* ignore quota errors */ }
+  }, [phase, currentCard, remaining, history]);
+
   const mono = { fontFamily: "'IBM Plex Mono', monospace" } as const;
 
   useEffect(() => {
@@ -81,6 +119,7 @@ export function PlanechaseClient() {
     setRemaining([]);
     setHistory([]);
     setLastResult(null);
+    try { localStorage.removeItem(PC_KEY); } catch { /* ignore */ }
   }
 
   const doPlaneswalk = useCallback((fromCard: PlaneCard, fromRemaining: PlaneCard[]) => {

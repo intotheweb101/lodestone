@@ -3,11 +3,13 @@ import { useState } from 'react';
 import { LifeCounter } from './life-counter';
 import { PlanechaseClient } from './planechase-client';
 import { ToolBar } from './tool-bar';
+import { useWakeLock } from './use-wake-lock';
 
 type Mode = 'life' | 'planechase';
 
 export function PlayLayout() {
   const [mode, setMode] = useState<Mode>('life');
+  useWakeLock(); // Keep screen awake during play
 
   const tabStyle = (active: boolean) => ({
     padding: '7px 18px', borderRadius: '8px',
