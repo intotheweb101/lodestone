@@ -67,7 +67,7 @@ export function deckSize(deck: Deck): number {
 }
 
 /** Format rules for legality checks (Tier A — pure, no DB). */
-const FORMAT_RULES: Partial<Record<DeckFormat, { minSize: number; maxSize?: number; singleton: boolean; maxCopies: number; maxSideboard: number }>> = {
+export const FORMAT_RULES: Partial<Record<DeckFormat, { minSize: number; maxSize?: number; singleton: boolean; maxCopies: number; maxSideboard: number }>> = {
   commander: { minSize: 100, maxSize: 100, singleton: true,  maxCopies: 1,  maxSideboard: 0 },
   standard:  { minSize: 60,              singleton: false, maxCopies: 4,  maxSideboard: 15 },
   modern:    { minSize: 60,              singleton: false, maxCopies: 4,  maxSideboard: 15 },

@@ -4,6 +4,8 @@ import { getCardsInSet, listSets } from '@/lib/db/queries';
 import type { ScryfallCard } from '@/lib/db/queries';
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { resolveActingUser } from '@/lib/auth/session';
+import { getCollectionMap } from '@/lib/collection/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +40,13 @@ export default async function SetPage({
   const setType = setRow?.set_type ?? null;
   const releasedAt = setRow?.released_at ?? null;
   const cardCount = cards.length;
+
+  // Collection ownership — gated to logged-in users
+  const user = await resolveActingUser();
+  const collectionMap = (user && user.id !== 'local') ? getCollectionMap(user.id) : null;
+  const ownedCount = collectionMap
+    ? cards.filter(c => c.oracle_id && collectionMap.has(c.oracle_id)).length
+    : null;
 
   const rarityOrder: Record<string, number> = { mythic: 0, rare: 1, uncommon: 2, common: 3, special: 4, bonus: 5 };
 
@@ -79,6 +88,11 @@ export default async function SetPage({
           <p style={{ color: 'var(--text-faint)', fontSize: '12px', margin: 0 }}>
             {cardCount} cards
             {releasedAt && ` · released ${releasedAt}`}
+            {ownedCount !== null && (
+              <span style={{ marginLeft: 8, color: ownedCount === cardCount ? '#54c08a' : 'var(--text-faint)' }}>
+                · <span style={{ color: '#54c08a', fontWeight: 600 }}>{ownedCount}</span> / {cardCount} owned
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -90,7 +104,7 @@ export default async function SetPage({
           .sort((a, b) => (rarityOrder[a.rarity ?? ''] ?? 9) - (rarityOrder[b.rarity ?? ''] ?? 9));
         if (group.length === 0) return null;
         return (
-          <RaritySection key={rarity} rarity={rarity} cards={group} />
+          <RaritySection key={rarity} rarity={rarity} cards={group} collectionMap={collectionMap} />
         );
       })}
 
@@ -99,7 +113,7 @@ export default async function SetPage({
         const known = new Set(['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus']);
         const rest = cards.filter(c => !known.has(c.rarity ?? ''));
         if (rest.length === 0) return null;
-        return <RaritySection rarity="other" cards={rest} />;
+        return <RaritySection rarity="other" cards={rest} collectionMap={collectionMap} />;
       })()}
     </div>
   );
@@ -115,7 +129,8 @@ const RARITY_COLOR: Record<string, string> = {
   other:    'var(--text-faint)',
 };
 
-function RaritySection({ rarity, cards }: { rarity: string; cards: ScryfallCard[] }) {
+function RaritySection({ rarity, cards, collectionMap }: { rarity: string; cards: ScryfallCard[]; collectionMap: Map<string, { quantity: number; foil: boolean }> | null }) {
+  const ownedInGroup = collectionMap ? cards.filter(c => c.oracle_id && collectionMap.has(c.oracle_id)).length : null;
   return (
     <section style={{ marginBottom: '2rem' }}>
       <div style={{
@@ -127,22 +142,38 @@ function RaritySection({ rarity, cards }: { rarity: string; cards: ScryfallCard[
       }}>
         {rarity}
         <span style={{ color: 'var(--text-faintest)', fontWeight: 400 }}>({cards.length})</span>
+        {ownedInGroup !== null && (
+          <span style={{ color: 'var(--text-faint)', fontWeight: 400, fontSize: '9px' }}>
+            {ownedInGroup}/{cards.length} owned
+          </span>
+        )}
       </div>
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
         gap: '10px',
       }}>
-        {cards.map(card => <SetCardTile key={card.scryfall_id} card={card} />)}
+        {cards.map(card => (
+          <SetCardTile
+            key={card.scryfall_id}
+            card={card}
+            owned={collectionMap
+              ? (card.oracle_id ? (collectionMap.get(card.oracle_id) ?? null) : null)
+              : undefined}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
-function SetCardTile({ card }: { card: ScryfallCard }) {
+function SetCardTile({ card, owned }: { card: ScryfallCard; owned?: { quantity: number; foil: boolean } | null }) {
   const imageUrl = card.image_uris?.normal ?? card.image_uris?.small ?? null;
   const priceRaw = card.prices?.usd ?? null;
   const priceUsd = priceRaw ? parseFloat(priceRaw) : null;
+  // undefined = no collection tracking; null = tracked, not owned; object = owned
+  const isOwned = owned != null; // true only for the object case
+  const trackingActive = owned !== undefined;
 
   return (
     <Link
@@ -150,10 +181,12 @@ function SetCardTile({ card }: { card: ScryfallCard }) {
       style={{ textDecoration: 'none', color: 'var(--text)' }}
     >
       <div style={{
-        background: 'var(--surface)', border: '1px solid var(--border)',
+        background: 'var(--surface)',
+        border: `1px solid ${isOwned ? 'rgba(84,192,138,0.35)' : 'var(--border)'}`,
         borderRadius: '10px', overflow: 'hidden',
         transition: 'border-color 0.12s',
         position: 'relative',
+        opacity: trackingActive && !isOwned ? 0.6 : 1,
       }}>
         {imageUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -184,6 +217,17 @@ function SetCardTile({ card }: { card: ScryfallCard }) {
         }}>
           #{card.collector_number}
         </div>
+        {isOwned && (
+          <div style={{
+            position: 'absolute', top: '5px', right: '5px',
+            background: 'rgba(84,192,138,0.85)',
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: '8px', fontWeight: 700, color: '#07151a',
+            padding: '1px 4px', borderRadius: '3px',
+          }}>
+            ×{owned!.quantity}
+          </div>
+        )}
 
         <div style={{ padding: '5px 8px 7px' }}>
           <div style={{

@@ -1,12 +1,13 @@
 /**
  * Deck recommendation engine — rule-based, using Scryfall fields.
  * Runs against the deck's oracle_ids and the Scryfall SQLite data.
+ * Supports all formats: Commander (100-card singleton) and 60-card constructed.
  */
 
 import { getDb } from '../db/connection';
 import { getScryfallCardById, parseScryfallRow, ScryfallCard } from '../db/queries';
-import type { Deck } from '../deck/model';
-import { mainboardEntries } from '../deck/model';
+import type { Deck, DeckFormat } from '../deck/model';
+import { mainboardEntries, FORMAT_RULES } from '../deck/model';
 import { isLand, isBasicLand, mentionsRamp, mentionsDraw, mentionsRemoval, mentionsBoardWipe } from './classify';
 
 export interface Recommendation {
@@ -56,6 +57,20 @@ const COMMANDER_STAPLES: { name: string; oracle_id?: string; reason: string; col
   { name: 'Sylvan Library', reason: 'Green card advantage', colors: ['G'] },
 ];
 
+// Format profiles for 60-card constructed advice
+const CONSTRUCTED_PROFILES: Partial<Record<DeckFormat, {
+  landTarget: [number, number];   // [min_warn, min_ok]
+  landMax: number;                // warn above this
+  removalMin: number;
+  drawMin: number;
+}>> = {
+  standard: { landTarget: [19, 22], landMax: 27, removalMin: 4, drawMin: 3 },
+  modern:   { landTarget: [17, 20], landMax: 26, removalMin: 4, drawMin: 3 },
+  pioneer:  { landTarget: [19, 22], landMax: 27, removalMin: 4, drawMin: 3 },
+  legacy:   { landTarget: [14, 18], landMax: 25, removalMin: 4, drawMin: 3 },
+  vintage:  { landTarget: [14, 18], landMax: 25, removalMin: 4, drawMin: 3 },
+  pauper:   { landTarget: [17, 20], landMax: 26, removalMin: 4, drawMin: 3 },
+};
 
 export async function getRecommendations(deck: Deck): Promise<RecommendationResult> {
   const recommendations: Recommendation[] = [];
@@ -79,40 +94,45 @@ export async function getRecommendations(deck: Deck): Promise<RecommendationResu
   }
 
   const cardNames = new Set(cardRows.map(c => c.name.toLowerCase()));
+  const isCommander = deck.format === 'commander';
+  const constructedProfile = CONSTRUCTED_PROFILES[deck.format];
+  const formatRules = FORMAT_RULES[deck.format];
 
-  // ---- 1. Legality ----
-  if (deck.format === 'commander') {
-    for (const card of cardRows) {
-      const legality = card.legalities?.commander;
-      if (legality === 'banned') {
-        recommendations.push({
-          type: 'remove',
-          severity: 'error',
-          title: `${card.name} is BANNED in Commander`,
-          detail: 'This card is on the Commander banned list.',
-          card_name: card.name,
-          oracle_id: card.oracle_id,
-        });
-      } else if (legality === 'not_legal') {
-        recommendations.push({
-          type: 'remove',
-          severity: 'error',
-          title: `${card.name} is not legal in Commander`,
-          detail: 'This card cannot be played in Commander format.',
-          card_name: card.name,
-          oracle_id: card.oracle_id,
-        });
-      }
+  // ---- 1. Legality (all formats) ----
+  for (const card of cardRows) {
+    const legalities = card.legalities as Record<string, string> | undefined;
+    const legality = legalities?.[deck.format];
+    if (legality === 'banned') {
+      recommendations.push({
+        type: 'remove',
+        severity: 'error',
+        title: `${card.name} is BANNED in ${deck.format}`,
+        detail: `This card is on the ${deck.format} banned list.`,
+        card_name: card.name,
+        oracle_id: card.oracle_id,
+      });
+    } else if (legality === 'not_legal') {
+      recommendations.push({
+        type: 'remove',
+        severity: 'error',
+        title: `${card.name} is not legal in ${deck.format}`,
+        detail: `This card cannot be played in ${deck.format} format.`,
+        card_name: card.name,
+        oracle_id: card.oracle_id,
+      });
     }
   }
 
-  // ---- 2. Deck size (Commander = 100) ----
-  if (deck.format === 'commander') {
+  // ---- 2. Deck size (driven by FORMAT_RULES) ----
+  if (formatRules) {
     const total = mainboard.reduce((s, e) => s + e.quantity, 0);
-    if (total < 100) {
-      recommendations.push({ type: 'info', severity: 'warning', title: `Deck is ${100 - total} cards short`, detail: `Commander requires exactly 100 cards; you have ${total}.` });
-    } else if (total > 100) {
-      recommendations.push({ type: 'info', severity: 'error', title: `Deck is ${total - 100} cards over`, detail: `Commander requires exactly 100 cards; you have ${total}.` });
+    const { minSize, maxSize } = formatRules;
+    if (maxSize && total > maxSize) {
+      recommendations.push({ type: 'info', severity: 'error', title: `Deck is ${total - maxSize} cards over`, detail: `${deck.format} requires exactly ${maxSize} cards; you have ${total}.` });
+    } else if (maxSize && total < minSize) {
+      recommendations.push({ type: 'info', severity: 'warning', title: `Deck is ${minSize - total} cards short`, detail: `${deck.format} requires exactly ${maxSize} cards; you have ${total}.` });
+    } else if (!maxSize && total < minSize) {
+      recommendations.push({ type: 'info', severity: 'warning', title: `Deck needs ${minSize - total} more cards`, detail: `${deck.format} requires at least ${minSize} cards; you have ${total}.` });
     }
   }
 
@@ -142,7 +162,7 @@ export async function getRecommendations(deck: Deck): Promise<RecommendationResu
   const avg_cmc = cmc_card_count > 0 ? total_cmc / cmc_card_count : 0;
 
   // ---- 4. Land count ----
-  if (deck.format === 'commander') {
+  if (isCommander) {
     if (land_count < 33) {
       recommendations.push({ type: 'info', severity: 'error', title: `Very low land count: ${land_count}`, detail: 'Commander decks typically run 36–38 lands. With fewer than 33 you risk frequent mana-flooding.' });
     } else if (land_count < 36) {
@@ -150,40 +170,50 @@ export async function getRecommendations(deck: Deck): Promise<RecommendationResu
     } else if (land_count > 40) {
       recommendations.push({ type: 'info', severity: 'suggestion', title: `High land count: ${land_count}`, detail: 'You may be able to cut a land for a spell if you have heavy ramp.' });
     }
+  } else if (constructedProfile) {
+    const [warnBelow, okBelow] = constructedProfile.landTarget;
+    if (land_count < warnBelow) {
+      recommendations.push({ type: 'info', severity: 'warning', title: `Low land count: ${land_count}`, detail: `60-card ${deck.format} decks typically run ${okBelow}–${constructedProfile.landMax} lands. With fewer than ${warnBelow} you risk mana issues.` });
+    } else if (land_count > constructedProfile.landMax) {
+      recommendations.push({ type: 'info', severity: 'suggestion', title: `High land count: ${land_count}`, detail: `Most ${deck.format} decks run ${okBelow}–${constructedProfile.landMax} lands. Consider trimming a land for a threat or interaction piece.` });
+    }
   }
 
-  // ---- 5. Ramp ----
-  if (deck.format === 'commander' && ramp_count < 8) {
+  // ---- 5. Ramp (Commander only — not relevant for 60-card) ----
+  if (isCommander && ramp_count < 8) {
     recommendations.push({ type: 'info', severity: 'warning', title: `Low ramp: ${ramp_count} pieces`, detail: 'Commander decks typically want 8–12 ramp sources. Low ramp = slow starts.' });
   }
 
-  // ---- 6. Draw ----
-  if (deck.format === 'commander' && draw_count < 5) {
+  // ---- 6. Card draw ----
+  if (isCommander && draw_count < 5) {
     recommendations.push({ type: 'info', severity: 'warning', title: `Low card draw: ${draw_count} sources`, detail: 'Aim for at least 8–10 card draw/advantage sources to avoid running out of gas.' });
+  } else if (constructedProfile && draw_count < constructedProfile.drawMin) {
+    recommendations.push({ type: 'info', severity: 'suggestion', title: `Low card draw: ${draw_count} sources`, detail: `Consider adding cantrips or draw spells — even ${constructedProfile.drawMin}–6 pieces helps consistency in ${deck.format}.` });
   }
 
-  // ---- 7. Removal ----
-  if (deck.format === 'commander' && removal_count + wipes_count < 5) {
+  // ---- 7. Removal / interaction ----
+  if (isCommander && removal_count + wipes_count < 5) {
     recommendations.push({ type: 'info', severity: 'warning', title: `Low interaction: ${removal_count} removal + ${wipes_count} wipes`, detail: 'Most Commander decks want at least 5–8 pieces of removal/interaction to deal with threats.' });
+  } else if (constructedProfile && removal_count + wipes_count < constructedProfile.removalMin) {
+    recommendations.push({ type: 'info', severity: 'warning', title: `Low removal: ${removal_count + wipes_count} pieces`, detail: `${deck.format} typically wants at least ${constructedProfile.removalMin} interaction pieces to handle threats.` });
   }
 
   // ---- 8. Mana curve ----
   const highCmcCount = (cmc_histogram['6'] ?? 0) + (cmc_histogram['7+'] ?? 0);
-  if (highCmcCount > 8) {
+  const highCmcThreshold = isCommander ? 8 : 4;
+  if (highCmcCount > highCmcThreshold) {
     recommendations.push({ type: 'info', severity: 'suggestion', title: `Top-heavy curve: ${highCmcCount} cards at CMC 6+`, detail: `Average CMC: ${avg_cmc.toFixed(1)}. Consider replacing some high-cost cards with lower-CMC value pieces.` });
   }
 
-  // ---- 9. Staple suggestions ----
-  if (deck.format === 'commander') {
+  // ---- 9. Staple suggestions (Commander only) ----
+  if (isCommander) {
     // Get commander's color identity
     const commanderEntry = deck.entries.find(e => e.is_commander);
     const commanderCard = commanderEntry ? cardRows.find(c => c.oracle_id === commanderEntry.oracle_id) : null;
     const colorIdentity = commanderCard?.color_identity ?? [];
 
     for (const staple of COMMANDER_STAPLES) {
-      // Skip if already in deck
       if (cardNames.has(staple.name.toLowerCase())) continue;
-      // Skip if requires a color not in the deck's identity
       if (staple.colors.length > 0 && !staple.colors.some(c => colorIdentity.includes(c))) continue;
 
       recommendations.push({
