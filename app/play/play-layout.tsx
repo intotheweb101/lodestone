@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { LifeCounter } from './life-counter';
 import { PlanechaseClient } from './planechase-client';
+import { ToolBar } from './tool-bar';
 
 type Mode = 'life' | 'planechase';
 
@@ -31,6 +32,9 @@ export function PlayLayout() {
 
       {mode === 'life' && <LifeCounter />}
       {mode === 'planechase' && <PlanechaseClient />}
+
+      {/* Floating play-companion tool bar — overlays all modes */}
+      <ToolBar />
     </div>
   );
 }

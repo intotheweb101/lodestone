@@ -1,9 +1,9 @@
 'use client';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Format = 'commander' | 'standard';
+type Format = 'commander' | 'standard' | '2hg' | 'brawl' | 'oathbreaker';
 
 interface Player {
   id: number;
@@ -35,8 +35,19 @@ const PLAYER_COLORS = [
 ];
 
 const STARTING_LIFE: Record<Format, number> = {
-  commander: 40,
-  standard: 20,
+  commander:   40,
+  standard:    20,
+  '2hg':       30,
+  brawl:       25,
+  oathbreaker: 20,
+};
+
+const FORMAT_LABEL: Record<Format, string> = {
+  commander:   'Commander (40)',
+  standard:    'Standard (20)',
+  '2hg':       '2HG (30)',
+  brawl:       'Brawl (25)',
+  oathbreaker: 'Oathbreaker (20)',
 };
 
 const DEFAULT_NAMES = ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5', 'Player 6'];
@@ -140,7 +151,8 @@ function PlayerTile({
   const nameRef = useRef<HTMLInputElement>(null);
   const col = PLAYER_COLORS[player.id % PLAYER_COLORS.length];
 
-  const isDead = !player.active || player.life <= 0 || player.poison >= 10;
+  const cmdDeath = format === 'commander' && player.cmdDmg.some(d => d >= 21);
+  const isDead = !player.active || player.life <= 0 || player.poison >= 10 || cmdDeath;
 
   function commitName() {
     onNameChange(player.id, draftName.trim() || player.name);
@@ -323,6 +335,19 @@ function HistoryPanel({ entries, players }: { entries: HistoryEntry[]; players: 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const LC_KEY = 'lodestone-life-state';
+
+function loadLifeState(): { format: Format; playerCount: number; players: Player[]; history: HistoryEntry[] } | null {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LC_KEY) : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveLifeState(format: Format, playerCount: number, players: Player[], history: HistoryEntry[]) {
+  try { localStorage.setItem(LC_KEY, JSON.stringify({ format, playerCount, players, history })); } catch { /* ignore */ }
+}
+
 export function LifeCounter() {
   const [format, setFormat] = useState<Format>('commander');
   const [playerCount, setPlayerCount] = useState(4);
@@ -330,6 +355,22 @@ export function LifeCounter() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+
+  // Restore from localStorage on mount
+  useEffect(() => {
+    const saved = loadLifeState();
+    if (saved) {
+      setFormat(saved.format);
+      setPlayerCount(saved.playerCount);
+      setPlayers(saved.players);
+      setHistory(saved.history);
+    }
+  }, []);
+
+  // Persist whenever game state changes
+  useEffect(() => {
+    saveLifeState(format, playerCount, players, history);
+  }, [format, playerCount, players, history]);
 
   function pushHistory(entry: Omit<HistoryEntry, 'ts'>) {
     setHistory(h => [...h, { ...entry, ts: Date.now() }]);
@@ -388,6 +429,7 @@ export function LifeCounter() {
     setPlayers(makePlayers(playerCount, format));
     setHistory([]);
     setConfirmReset(false);
+    try { localStorage.removeItem(LC_KEY); } catch { /* ignore */ }
   }
 
   const gridCols = playerCount <= 2 ? playerCount : playerCount <= 4 ? 2 : playerCount <= 6 ? 3 : 2;
@@ -411,20 +453,20 @@ export function LifeCounter() {
         </span>
 
         {/* Format */}
-        <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-          {(['commander', 'standard'] as Format[]).map(f => (
+        <div style={{ display: 'flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>
+          {(Object.keys(FORMAT_LABEL) as Format[]).map(f => (
             <button
               key={f}
               onClick={() => applySettings(playerCount, f)}
               style={{
-                padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'IBM Plex Mono', monospace",
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', fontFamily: "'IBM Plex Mono', monospace",
                 background: format === f ? 'rgba(232,177,74,0.15)' : 'rgba(255,255,255,0.04)',
                 border: `1px solid ${format === f ? 'rgba(232,177,74,0.5)' : 'rgba(255,255,255,0.08)'}`,
                 color: format === f ? '#e8b14a' : 'rgba(255,255,255,0.4)',
               }}
             >
-              {f} ({STARTING_LIFE[f]})
+              {FORMAT_LABEL[f]}
             </button>
           ))}
         </div>

@@ -299,7 +299,7 @@ export function NavLinks() {
       <NavItem href="/metagame" label="Metagame" icon={<MetagameIcon />} active={isActive('/metagame')} />
       <NavItem href="/trades" label="Trades" icon={<TradeIcon />} active={isActive('/trades')} />
       <NavItem href="/feed" label="Feed" icon={<FeedIcon />} active={isActive('/feed')} />
-      <NavItem href="/play" label="Life Counter" icon={<LifeIcon />} active={isActive('/play')} />
+      <NavItem href="/play" label="Play" icon={<LifeIcon />} active={isActive('/play')} />
       <NavItem href="/sealed" label="Sealed" icon={<SealedIcon />} active={isActive('/sealed')} />
       <NavItem href="/draft" label="Draft" icon={<DraftIcon />} active={isActive('/draft')} />
       <NavItem href="/bracket" label="Bracket Calc" icon={<BracketCalcIcon />} active={isActive('/bracket')} />
