@@ -772,4 +772,28 @@ export function runMigrations(): void {
     db.prepare(`DELETE FROM shop_products WHERE shop_id IN (${ph})`).run(...deadIds);
     db.prepare(`DELETE FROM shops WHERE id IN (${ph})`).run(...deadIds);
   }
+
+  // User blocks and content reports (Phase 3 — community moderation)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      blocker_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (blocker_id, blocked_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON user_blocks(blocker_id);
+    CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON user_blocks(blocked_id);
+
+    CREATE TABLE IF NOT EXISTS content_reports (
+      id          TEXT PRIMARY KEY,
+      reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      target_type TEXT NOT NULL CHECK(target_type IN ('deck_comment','card_comment','deck')),
+      target_id   TEXT NOT NULL,
+      reason      TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','dismissed')),
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reports_status ON content_reports(status);
+    CREATE INDEX IF NOT EXISTS idx_reports_target ON content_reports(target_type, target_id);
+  `);
 }

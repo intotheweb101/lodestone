@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 interface UserRow { id: string; email: string; name: string; username: string | null; role: string; created_at: string; deck_count: number; last_active: string | null }
 interface ShopRow { id: number; name: string; base_url: string; dialect: string; region: string; last_synced_at: string | null; enabled: number }
+interface ReportRow { id: string; reporter_id: string; target_type: string; target_id: string; reason: string; status: string; created_at: string }
 
 interface ShopHealth {
   id: number; name: string; base_url: string; dialect: string; region: string;
@@ -33,7 +34,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [shops, setShops] = useState<ShopRow[]>([]);
   const [newShop, setNewShop] = useState({ name: '', url: '', dialect: 'A', region: 'NZ' });
-  const [tab, setTab] = useState<'users' | 'shops' | 'sync'>('sync');
+  const [tab, setTab] = useState<'users' | 'shops' | 'sync' | 'moderation'>('sync');
+  const [reports, setReports] = useState<ReportRow[]>([]);
   const [syncHealth, setSyncHealth] = useState<SyncHealth | null>(null);
   const [syncHealthLoading, setSyncHealthLoading] = useState(false);
   const [syncingShop, setSyncingShop] = useState<number | null>(null);
@@ -51,13 +53,18 @@ export default function AdminPage() {
       .finally(() => setSyncHealthLoading(false));
   }, []);
 
+  const loadReports = useCallback(() => {
+    fetch('/api/admin/reports').then(r => r.json()).then((d: { reports?: ReportRow[] }) => setReports(d.reports ?? []));
+  }, []);
+
   useEffect(() => {
     if (user?.role === 'admin') {
       fetch('/api/admin/users').then(r => r.json()).then((d: { users?: UserRow[] }) => setUsers(d.users ?? []));
       fetch('/api/admin/shops').then(r => r.json()).then((d: { shops?: ShopRow[] }) => setShops(d.shops ?? []));
       loadSyncHealth();
+      loadReports();
     }
-  }, [user, loadSyncHealth]);
+  }, [user, loadSyncHealth, loadReports]);
 
   async function syncShop(shopId: number) {
     setSyncingShop(shopId);
@@ -109,6 +116,11 @@ export default function AdminPage() {
     setShops(s => s.filter(x => x.id !== id));
   }
 
+  async function resolveReport(id: string, status: 'resolved' | 'dismissed') {
+    await fetch('/api/admin/reports', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status }) });
+    setReports(r => r.filter(x => x.id !== id));
+  }
+
   async function toggleShopEnabled(id: number, currentEnabled: number) {
     const enabled = currentEnabled ? 0 : 1;
     await fetch('/api/admin/shops', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, enabled }) });
@@ -128,9 +140,9 @@ export default function AdminPage() {
       </div>
 
       <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: '#0c2426', borderRadius: '11px', padding: '4px', width: 'fit-content' }}>
-        {(['sync', 'shops', 'users'] as const).map(t => (
+        {(['sync', 'shops', 'users', 'moderation'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{ padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: "'IBM Plex Sans',sans-serif", background: tab === t ? '#14383a' : 'transparent', color: tab === t ? '#eef3f0' : '#6f8a85', outline: tab === t ? '1px solid #214a47' : 'none' }}>
-            {t === 'users' ? `Users (${users.length})` : t === 'shops' ? `Shops (${shops.length})` : 'Sync Health'}
+            {t === 'users' ? `Users (${users.length})` : t === 'shops' ? `Shops (${shops.length})` : t === 'moderation' ? `Reports${reports.length > 0 ? ` (${reports.length})` : ''}` : 'Sync Health'}
           </button>
         ))}
       </div>
@@ -306,6 +318,55 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {tab === 'moderation' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '13px', color: '#6f8a85' }}>
+              {reports.length === 0 ? 'No open reports.' : `${reports.length} open report${reports.length !== 1 ? 's' : ''}`}
+            </div>
+            <button onClick={loadReports} style={{ background: 'none', border: '1px solid #1d4441', color: '#6f8a85', fontSize: '13px', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
+              ⟳ Refresh
+            </button>
+          </div>
+          {reports.map(r => {
+            const targetHref = r.target_type === 'deck' ? `/decks/${r.target_id}` : r.target_type === 'deck_comment' ? `/decks/${r.target_id}` : `/cards`;
+            const typeColors: Record<string, string> = { deck_comment: '#a9def9', card_comment: '#c4b5fd', deck: '#e8b14a' };
+            const tc = typeColors[r.target_type] ?? '#8aa39d';
+            return (
+              <div key={r.id} style={{ background: '#0f2a2c', border: '1px solid #1d4441', borderRadius: '12px', padding: '16px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '4px', fontFamily: "'IBM Plex Mono',monospace", fontWeight: 700, background: `${tc}18`, color: tc, border: `1px solid ${tc}44` }}>
+                        {r.target_type.replace('_', ' ')}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#5f7a76', fontFamily: "'IBM Plex Mono',monospace" }}>
+                        {new Date(r.created_at).toLocaleString('en-NZ', { dateStyle: 'short', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#eef3f0', marginBottom: '4px', fontStyle: 'italic' }}>
+                      &ldquo;{r.reason}&rdquo;
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#5f7a76', fontFamily: "'IBM Plex Mono',monospace" }}>
+                      target: {r.target_id}{' '}
+                      <a href={targetHref} target="_blank" rel="noreferrer" style={{ color: '#7fd6a6', textDecoration: 'none' }}>view →</a>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button onClick={() => resolveReport(r.id, 'resolved')} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '7px', border: '1px solid rgba(84,192,138,0.3)', background: 'rgba(84,192,138,0.08)', color: '#7fd6a6', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif", fontWeight: 600 }}>
+                      Resolve
+                    </button>
+                    <button onClick={() => resolveReport(r.id, 'dismissed')} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '7px', border: '1px solid #214a47', background: 'transparent', color: '#6f8a85', cursor: 'pointer', fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

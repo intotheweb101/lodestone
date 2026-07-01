@@ -1,6 +1,64 @@
 import { getDb } from '../db/connection';
 import { randomUUID } from 'crypto';
 
+// ─── Blocks ───────────────────────────────────────────────────────────────────
+
+export function blockUser(blockerId: string, blockedId: string): void {
+  if (blockerId === blockedId) return;
+  getDb().prepare('INSERT OR IGNORE INTO user_blocks (blocker_id, blocked_id) VALUES (?, ?)').run(blockerId, blockedId);
+}
+
+export function unblockUser(blockerId: string, blockedId: string): void {
+  getDb().prepare('DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?').run(blockerId, blockedId);
+}
+
+export function isBlocked(viewerId: string, subjectId: string): boolean {
+  // Either direction: viewer blocked subject, or subject blocked viewer
+  return !!getDb().prepare(
+    'SELECT 1 FROM user_blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)'
+  ).get(viewerId, subjectId, subjectId, viewerId);
+}
+
+export function getBlockedIds(userId: string): Set<string> {
+  const rows = getDb().prepare(
+    'SELECT blocked_id FROM user_blocks WHERE blocker_id = ?'
+  ).all(userId) as { blocked_id: string }[];
+  return new Set(rows.map(r => r.blocked_id));
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export interface ContentReport {
+  id: string;
+  reporter_id: string;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+export function reportContent(opts: {
+  reporterId: string;
+  targetType: 'deck_comment' | 'card_comment' | 'deck';
+  targetId: string;
+  reason: string;
+}): void {
+  getDb().prepare(
+    'INSERT INTO content_reports (id, reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)'
+  ).run(randomUUID(), opts.reporterId, opts.targetType, opts.targetId, opts.reason.trim());
+}
+
+export function getOpenReports(limit = 50): ContentReport[] {
+  return getDb().prepare(
+    "SELECT * FROM content_reports WHERE status = 'open' ORDER BY created_at DESC LIMIT ?"
+  ).all(limit) as ContentReport[];
+}
+
+export function resolveReport(reportId: string, status: 'resolved' | 'dismissed'): void {
+  getDb().prepare("UPDATE content_reports SET status = ? WHERE id = ?").run(status, reportId);
+}
+
 // ─── Following ────────────────────────────────────────────────────────────────
 
 export function toggleFollow(followerId: string, followeeId: string): { following: boolean } {
@@ -160,8 +218,10 @@ export interface FeedItem {
 }
 
 export function getActivityFeed(userId: string, limit = 40, offset = 0): FeedItem[] {
+  const blockedIds = getBlockedIds(userId);
+  const blockList = blockedIds.size > 0 ? [...blockedIds] : [];
   // Only show activity from people the user follows, for public decks
-  return getDb().prepare(`
+  return (getDb().prepare(`
     SELECT type, actor_id, actor_name, actor_username, deck_id, deck_name, deck_slug, ts FROM (
       SELECT 'deck_updated' AS type,
              u.id AS actor_id, u.name AS actor_name, u.username AS actor_username,
@@ -184,5 +244,6 @@ export function getActivityFeed(userId: string, limit = 40, offset = 0): FeedIte
     )
     ORDER BY ts DESC
     LIMIT ? OFFSET ?
-  `).all(userId, userId, limit, offset) as FeedItem[];
+  `).all(userId, userId, limit, offset) as FeedItem[])
+    .filter(item => !blockList.includes(item.actor_id));
 }

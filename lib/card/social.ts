@@ -32,6 +32,18 @@ export function getCardComments(oracleId: string): CardComment[] {
   `).all(oracleId) as CardComment[];
 }
 
+export function deleteCardComment(commentId: string): void {
+  getDb().prepare('DELETE FROM card_comments WHERE id = ?').run(commentId);
+}
+
+export function editCardComment(commentId: string, body: string): void {
+  getDb().prepare('UPDATE card_comments SET body = ? WHERE id = ?').run(body.trim(), commentId);
+}
+
+export function getCardComment(commentId: string): { id: string; oracle_id: string; user_id: string; body: string } | null {
+  return getDb().prepare('SELECT id, oracle_id, user_id, body FROM card_comments WHERE id = ?').get(commentId) as { id: string; oracle_id: string; user_id: string; body: string } | null;
+}
+
 export function addCardComment({
   oracleId,
   userId,

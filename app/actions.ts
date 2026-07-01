@@ -7,7 +7,8 @@ import { runMigrations } from '@/lib/db/migrations';
 import {
   createDeck, getDeck, addOrUpdateEntry, removeEntry, cloneDeck,
   updateDeckMeta, deleteDeck, listDecks, listPublicDecks, setDeckFolder,
-  toggleLike, addComment, createFolder, deleteFolder, getDeckBySlug, getFolders,
+  toggleLike, addComment, deleteComment, editComment, getComment,
+  createFolder, deleteFolder, getDeckBySlug, getFolders,
   recomputeDeckColorIdentity, setDeckTags, setEntryCategory, setCommanderRole,
 } from '@/lib/deck/store';
 import type { Deck, DeckEntry, DeckFormat } from '@/lib/deck/model';
@@ -21,7 +22,7 @@ import { updateUser, updateUserEmail, changeUserPassword, deleteUser } from '@/l
 import { generatePublicSlug } from '@/lib/deck/slug';
 import { getScryfallCardById, getScryfallCardsByOracleId } from '@/lib/db/queries';
 import { classifyCard } from '@/lib/recommend/classify';
-import { toggleFollow, createNotification, getNotifications, getUnreadCount, markAllRead, markRead } from '@/lib/social/store';
+import { toggleFollow, createNotification, getNotifications, getUnreadCount, markAllRead, markRead, reportContent } from '@/lib/social/store';
 import type { NotificationType } from '@/lib/social/store';
 import { snapshotDeck, listVersions, restoreVersion } from '@/lib/deck/versions';
 import { listPackages, getPackageEntries, createPackage, addEntryToPackage, removeEntryFromPackage, updatePackageMeta, deletePackage } from '@/lib/packages/store';
@@ -141,6 +142,45 @@ export async function actionAddComment(deckId: string, body: string, parentId?: 
   if (deck?.public_slug) revalidatePath(`/d/${deck.public_slug}`);
   revalidatePath(`/decks/${deckId}`);
   return { id };
+}
+
+/** Delete a deck comment. Allowed for: comment author, deck owner, or admin. */
+export async function actionDeleteComment(commentId: string): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  const comment = getComment(commentId);
+  if (!comment) return; // already gone
+  const deck = getDeck(comment.deck_id);
+  const isAuthor = comment.user_id === user.id;
+  const isDeckOwner = deck?.user_id === user.id;
+  const isAdmin = user.role === 'admin';
+  if (!isAuthor && !isDeckOwner && !isAdmin) throw new Error('Not authorized to delete this comment');
+  deleteComment(commentId);
+  if (deck?.public_slug) revalidatePath(`/d/${deck.public_slug}`);
+  revalidatePath(`/decks/${comment.deck_id}`);
+}
+
+/** Delete a card comment. Allowed for: comment author or admin. */
+export async function actionDeleteCardComment(commentId: string): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  const comment = getCardComment(commentId);
+  if (!comment) return;
+  if (comment.user_id !== user.id && user.role !== 'admin') throw new Error('Not authorized');
+  deleteCardComment(commentId);
+}
+
+/** Report a piece of content (deck comment, card comment, or deck). */
+export async function actionReportContent(opts: {
+  targetType: 'deck_comment' | 'card_comment' | 'deck';
+  targetId: string;
+  reason: string;
+}): Promise<void> {
+  ensureMigrated();
+  const user = await requireUser();
+  if (user.id === 'local') throw new Error('Login required to report content');
+  if (!opts.reason.trim()) throw new Error('Reason is required');
+  reportContent({ reporterId: user.id, ...opts });
 }
 
 /** Create a folder. Requires a real account. */
@@ -886,7 +926,7 @@ export async function actionSetForTrade(oracleId: string, forTrade: boolean): Pr
 
 // ─── Card social (5A) ────────────────────────────────────────────────────────
 
-import { addCardComment, toggleCardUpvote } from '@/lib/card/social';
+import { addCardComment, toggleCardUpvote, deleteCardComment, getCardComment } from '@/lib/card/social';
 
 export async function actionAddCardComment(
   oracleId: string,

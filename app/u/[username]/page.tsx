@@ -146,7 +146,13 @@ export default async function UserProfilePage({
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>
             @{profile.username ?? username}
             <span style={{ marginLeft: 14, color: 'var(--text-faint)' }}>
-              {followerCount} followers · {followingCount} following
+              <Link href={`/u/${profile.username ?? username}/followers`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                {followerCount} <span style={{ color: 'var(--text-faint)' }}>followers</span>
+              </Link>
+              {' · '}
+              <Link href={`/u/${profile.username ?? username}/following`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                {followingCount} <span style={{ color: 'var(--text-faint)' }}>following</span>
+              </Link>
             </span>
           </div>
 

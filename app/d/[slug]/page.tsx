@@ -10,6 +10,7 @@ import { ManaIcon } from '@/components/ui';
 import { LikeButton } from '@/components/like-button';
 import { CommentForm } from '@/components/comment-form';
 import { CommentReplySection } from '@/components/comment-reply';
+import { CommentDeleteButton } from '@/components/comment-delete-button';
 import Link from 'next/link';
 import type { DeckEntry } from '@/lib/deck/model';
 import { mainboardEntries, boardEntries, isLegal } from '@/lib/deck/model';
@@ -261,30 +262,38 @@ export default async function PublicDeckPage({ params }: { params: Promise<{ slu
             No comments yet.{user && user.id !== 'local' ? ' Be the first!' : ' Log in to comment.'}
           </p>
         )}
-        {comments.filter(c => !c.parent_id).map(c => (
-          <div key={c.id} style={{ borderLeft: '3px solid var(--border)', paddingLeft: 16, marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-              <strong style={{ fontSize: 13 }}>{c.user_name}</strong>
-              <span style={{ fontSize: 11, color: 'var(--text-muted, #8ba)' }}>
-                {new Date(c.created_at).toLocaleDateString()}
-              </span>
-            </div>
-            <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</div>
-            {/* Replies */}
-            {comments.filter(r => r.parent_id === c.id).map(r => (
-              <div key={r.id} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 12, marginTop: 8, marginLeft: 8 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                  <strong style={{ fontSize: 12 }}>{r.user_name}</strong>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted, #8ba)' }}>
-                    {new Date(r.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{r.body}</div>
+        {comments.filter(c => !c.parent_id).map(c => {
+          const canDeleteTop = isRealUser && (c.user_id === user!.id || deck.user_id === user!.id || user!.role === 'admin');
+          return (
+            <div key={c.id} style={{ borderLeft: '3px solid var(--border)', paddingLeft: 16, marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                <strong style={{ fontSize: 13 }}>{c.user_name}</strong>
+                <span style={{ fontSize: 11, color: 'var(--text-muted, #8ba)' }}>
+                  {new Date(c.created_at).toLocaleDateString()}
+                </span>
+                {canDeleteTop && <CommentDeleteButton commentId={c.id} />}
               </div>
-            ))}
-            {isRealUser && <CommentReplySection deckId={deck.id} commentId={c.id} />}
-          </div>
-        ))}
+              <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+              {/* Replies */}
+              {comments.filter(r => r.parent_id === c.id).map(r => {
+                const canDeleteReply = isRealUser && (r.user_id === user!.id || deck.user_id === user!.id || user!.role === 'admin');
+                return (
+                  <div key={r.id} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 12, marginTop: 8, marginLeft: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                      <strong style={{ fontSize: 12 }}>{r.user_name}</strong>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #8ba)' }}>
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </span>
+                      {canDeleteReply && <CommentDeleteButton commentId={r.id} />}
+                    </div>
+                    <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{r.body}</div>
+                  </div>
+                );
+              })}
+              {isRealUser && <CommentReplySection deckId={deck.id} commentId={c.id} />}
+            </div>
+          );
+        })}
         {isRealUser ? (
           <div style={{ marginTop: 20 }}>
             <div style={{ fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-faint)', marginBottom: 8, letterSpacing: '1px', textTransform: 'uppercase' }}>

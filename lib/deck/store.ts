@@ -416,6 +416,19 @@ export function addComment(opts: { id: string; deckId: string; userId: string; b
   return row;
 }
 
+export function deleteComment(commentId: string): void {
+  getDb().prepare('DELETE FROM deck_comments WHERE id = ?').run(commentId);
+}
+
+export function editComment(commentId: string, body: string): void {
+  getDb().prepare('UPDATE deck_comments SET body = ? WHERE id = ?').run(body.trim(), commentId);
+}
+
+/** Return the raw comment row (used for authorization checks). */
+export function getComment(commentId: string): { id: string; deck_id: string; user_id: string; body: string } | null {
+  return getDb().prepare('SELECT id, deck_id, user_id, body FROM deck_comments WHERE id = ?').get(commentId) as { id: string; deck_id: string; user_id: string; body: string } | null;
+}
+
 // ─── Social: folders ─────────────────────────────────────────────────────────
 
 export interface DeckFolder {
