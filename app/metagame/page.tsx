@@ -2,7 +2,7 @@
  * /metagame — Site-native metagame data generated from public decks.
  * Shows deck of the day, format leaderboard, most-played staples, and trending decks.
  */
-import { getTopStaples, getTrendingDecks, getTrendingDecksSince, getDeckOfTheDay } from '@/lib/deck/store';
+import { getTopStaples, getTrendingDecks, getTrendingDecksSince, getDeckOfTheDay, getDecksUsingCard } from '@/lib/deck/store';
 import { runMigrations } from '@/lib/db/migrations';
 import Link from 'next/link';
 import type { Metadata } from 'next';
@@ -55,6 +55,8 @@ export default async function MetagamePage({
   const trending = getTrendingDecks(20, activeFormat);
   const leaderboard = getTrendingDecksSince(activeFormat, 30, 10);
   const deckOfDay = getDeckOfTheDay();
+  const cardDecks = cardOracleId ? getDecksUsingCard(cardOracleId, 20) : null;
+  const cardName = cardOracleId ? staples.find(s => s.oracle_id === cardOracleId)?.card_name ?? null : null;
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 24px', color: 'var(--text)' }}>
@@ -152,17 +154,44 @@ export default async function MetagamePage({
                     <span style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
                       {s.deck_count} deck{s.deck_count !== 1 ? 's' : ''}
                     </span>
-                    <Link
-                      href={`/metagame?format=${activeFormat ?? ''}&card=${s.oracle_id}`}
-                      style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', whiteSpace: 'nowrap' }}
-                    >
-                      see decks →
-                    </Link>
+                    {cardOracleId === s.oracle_id ? (
+                      <Link
+                        href={`/metagame?format=${activeFormat ?? ''}`}
+                        style={{ fontSize: 11, color: 'var(--text-faint)', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        close ✕
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/metagame?format=${activeFormat ?? ''}&card=${s.oracle_id}`}
+                        style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        see decks →
+                      </Link>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </section>
+
+          {/* Decks using the selected card */}
+          {cardDecks && (
+            <section>
+              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                Decks playing {cardName ?? 'this card'}
+              </h2>
+              {cardDecks.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No public decks found.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {cardDecks.map((d, i) => (
+                    <DeckCard key={d.id} deck={d} rank={i + 1} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         {/* Right column: all-time trending */}

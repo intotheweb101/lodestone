@@ -48,11 +48,17 @@ export interface BasketEntry {
   product_url: string | null;
 }
 
+export interface ShopShipping {
+  shipping_flat: number | null;
+  free_threshold: number | null;
+}
+
 export interface PricedDeck {
   card_results: CardPriceResult[];
   best_per_card_total: number;
   fewest_shops_basket: BasketEntry[];
-  fewest_shops_total: number;
+  fewest_shops_total: number;         // cards only (use fewest_shops_total_inc_shipping for grand total)
+  fewest_shops_shipping: number;      // total shipping across basket shops (respecting free-shipping thresholds)
   fewest_shops_count: number;
   not_found_count: number;
   as_of: string;
@@ -66,7 +72,7 @@ const CONDITION_RANK: Record<string, number> = {
   dmg: 4, damaged: 4,
 };
 
-export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> {
+export async function priceDeck(cards: CardPriceRequest[], shopMeta?: Record<number, ShopShipping>): Promise<PricedDeck> {
   const validCards = cards.filter(c => c.match_key);
   const matchKeys = validCards.map(c => c.match_key!);
 
@@ -162,6 +168,8 @@ export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> 
     }
   }
 
+  const inBasketShops = new Set<number>();
+
   while (uncovered.size > 0) {
     let bestShopId = -1;
     let bestScore = -Infinity;
@@ -171,9 +179,21 @@ export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> 
       const coveredByShop = [...shopData.cards.keys()].filter(id => uncovered.has(id));
       if (coveredByShop.length === 0) continue;
 
-      // Score = coverage count (primary) - normalized avg cost (secondary)
-      const avgCost = coveredByShop.reduce((s, id) => s + (shopData.cards.get(id)?.price_nzd ?? 0), 0) / coveredByShop.length;
-      const score = coveredByShop.length * 1000 - avgCost;
+      // Score = coverage count (primary) - normalized avg cost (secondary) - marginal shipping
+      const coveredSubtotal = coveredByShop.reduce((s, id) => s + (shopData.cards.get(id)?.price_nzd ?? 0), 0);
+      const avgCost = coveredSubtotal / coveredByShop.length;
+
+      // Marginal shipping: 0 if shop already in basket, else add shipping cost unless free threshold met
+      let marginalShipping = 0;
+      if (!inBasketShops.has(shopId) && shopMeta) {
+        const meta = shopMeta[shopId];
+        if (meta?.shipping_flat != null) {
+          const meetsFreeThreshold = meta.free_threshold != null && coveredSubtotal >= meta.free_threshold;
+          if (!meetsFreeThreshold) marginalShipping = meta.shipping_flat;
+        }
+      }
+
+      const score = coveredByShop.length * 1000 - avgCost - marginalShipping;
 
       if (score > bestScore) {
         bestScore = score;
@@ -183,6 +203,8 @@ export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> 
     }
 
     if (bestShopId === -1 || !bestShopData) break; // no more shops can cover remaining cards
+
+    inBasketShops.add(bestShopId);
 
     // Add all cards this shop can cover from the still-uncovered set
     for (const [entryId, price] of bestShopData.cards) {
@@ -202,6 +224,19 @@ export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> 
 
   const fewest_shops_total = basket.reduce((s, e) => s + e.price_nzd, 0);
   const fewest_shops_count = new Set(basket.map(e => e.shop_id)).size;
+
+  // Compute actual shipping total across basket shops (respecting free-shipping thresholds)
+  let fewest_shops_shipping = 0;
+  if (shopMeta) {
+    const shopSubtotals = new Map<number, number>();
+    for (const e of basket) shopSubtotals.set(e.shop_id, (shopSubtotals.get(e.shop_id) ?? 0) + e.price_nzd);
+    for (const [shopId, subtotal] of shopSubtotals) {
+      const meta = shopMeta[shopId];
+      if (!meta?.shipping_flat) continue;
+      const meetsThreshold = meta.free_threshold != null && subtotal >= meta.free_threshold;
+      if (!meetsThreshold) fewest_shops_shipping += meta.shipping_flat;
+    }
+  }
   const not_found_count = cardResults.filter(r => r.not_found).length;
 
   return {
@@ -209,6 +244,7 @@ export async function priceDeck(cards: CardPriceRequest[]): Promise<PricedDeck> 
     best_per_card_total,
     fewest_shops_basket: basket,
     fewest_shops_total,
+    fewest_shops_shipping,
     fewest_shops_count,
     not_found_count,
     as_of: new Date().toISOString(),

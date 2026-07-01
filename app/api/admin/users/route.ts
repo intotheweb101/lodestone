@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, deleteUser, hashPassword } from '@/lib/auth';
+import { requireAdmin, deleteUser, hashPassword, updateUserEmail } from '@/lib/auth';
 import { getDb } from '@/lib/db/connection';
 import { runMigrations } from '@/lib/db/migrations';
 import { randomBytes } from 'crypto';
@@ -39,7 +39,14 @@ export async function PATCH(req: NextRequest) {
   const db = getDb();
   if (role !== undefined) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   if (name?.trim()) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), id);
-  if (email?.trim()) db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim().toLowerCase(), id);
+  if (email?.trim()) {
+    try {
+      updateUserEmail(id, email.trim());
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Email update failed';
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 

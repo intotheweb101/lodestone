@@ -58,6 +58,11 @@ export async function requireUser(): Promise<User> {
 export async function resolveActingUser(): Promise<User> {
   const user = await getCurrentUser();
   if (user) return user;
-  if (process.env.ALLOW_LOCAL_FALLBACK !== 'false') return getLocalUser();
+  // Fail-closed in production: require explicit opt-in via ALLOW_LOCAL_FALLBACK=true.
+  // In dev (non-production) the local sentinel user is allowed by default.
+  const allowFallback = process.env.NODE_ENV !== 'production'
+    ? process.env.ALLOW_LOCAL_FALLBACK !== 'false'
+    : process.env.ALLOW_LOCAL_FALLBACK === 'true';
+  if (allowFallback) return getLocalUser();
   throw Object.assign(new Error('Not authenticated'), { status: 401 });
 }

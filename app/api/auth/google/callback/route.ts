@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const user = upsertGoogleUser({ google_id: info.sub, email: info.email, name: info.name, avatar_url: info.picture });
     const token = createSession(user.id);
     const res = NextResponse.redirect(new URL('/', req.url));
-    res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax' });
+    res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     res.cookies.delete('oauth_state');
     return res;
   } catch {

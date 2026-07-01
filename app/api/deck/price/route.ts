@@ -13,6 +13,7 @@ import { buildMatchKey } from '@/lib/match/normalize';
 import { mainboardEntries } from '@/lib/deck/model';
 import { getCurrentUser } from '@/lib/auth/session';
 import { canView } from '@/lib/auth/access';
+import { getShopsWithShipping } from '@/lib/pricing/shopping-list';
 
 const CardSchema = z.object({
   entry_id: z.string(),
@@ -66,6 +67,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'deck_id or cards required' }, { status: 400 });
   }
 
-  const result = await priceDeck(cards);
+  const result = await priceDeck(cards, getShopsWithShipping());
   return NextResponse.json(result);
 }

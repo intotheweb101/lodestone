@@ -16,6 +16,6 @@ export async function POST(req: NextRequest) {
   if (!ok) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
   const token = createSession(user.id);
   const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } });
-  res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax' });
+  res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
   return res;
 }

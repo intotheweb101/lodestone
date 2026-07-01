@@ -21,6 +21,6 @@ export async function POST(req: NextRequest) {
   const user = createUser({ id: randomBytes(16).toString('hex'), email, name, password_hash: passwordHash, role });
   const token = createSession(user.id);
   const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
-  res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax' });
+  res.cookies.set('session', token, { httpOnly: true, path: '/', maxAge: 30 * 86400, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
   return res;
 }

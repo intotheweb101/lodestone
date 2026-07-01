@@ -171,7 +171,7 @@ export async function loadBulkCards(forceDownload = false): Promise<void> {
 
   const insertBatch = db.transaction((batch: ScryfallCardRaw[]) => {
     for (const c of batch) {
-      if (!c.oracle_id || !c.id || !c.name) continue; // skip tokens/art cards
+      if (!c.oracle_id || !c.id || !c.name) continue; // skip rows missing core identifiers (rare malformed entries)
 
       // For double-faced cards, top-level P/T/oracle_text may be absent;
       // fall back to the front face so pow:/tou:/o: still work.

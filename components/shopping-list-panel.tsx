@@ -86,12 +86,22 @@ export function ShoppingListPanel({ source, deckId, shopMeta }: ShoppingListPane
             Cheapest per card
           </button>
         </div>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 18, color: 'var(--accent)' }}>
-          NZ${(strategy === 'fewest-shops' ? result.fewest_shops_total : result.best_per_card_total).toFixed(2)}
-          {result.not_found_count > 0 && (
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-faint)', marginLeft: 8 }}>
-              +{result.not_found_count} not found
-            </span>
+        <div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 18, color: 'var(--accent)' }}>
+            NZ${(strategy === 'fewest-shops'
+              ? result.fewest_shops_total + (result.fewest_shops_shipping ?? 0)
+              : result.best_per_card_total
+            ).toFixed(2)}
+            {result.not_found_count > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-faint)', marginLeft: 8 }}>
+                +{result.not_found_count} not found
+              </span>
+            )}
+          </div>
+          {strategy === 'fewest-shops' && (result.fewest_shops_shipping ?? 0) > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--text-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>
+              incl. NZ${(result.fewest_shops_shipping ?? 0).toFixed(2)} shipping
+            </div>
           )}
         </div>
       </div>
@@ -166,7 +176,7 @@ export function ShoppingListPanel({ source, deckId, shopMeta }: ShoppingListPane
       )}
 
       <p style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-        Shipping costs shown but not included in totals. Prices in NZD.
+        Prices in NZD. Fewest-shops total includes estimated shipping.
       </p>
     </div>
   );

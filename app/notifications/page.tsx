@@ -18,6 +18,7 @@ export default async function NotificationsPage() {
     like: 'liked your deck',
     comment: 'commented on your deck',
     follow: 'started following you',
+    price: 'price alert',
   };
 
   // Group by date
@@ -74,15 +75,25 @@ export default async function NotificationsPage() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13 }}>
-                      <span style={{ fontWeight: 700 }}>{n.actor_name}</span>
-                      {' '}
-                      <span style={{ color: 'var(--text-faint)' }}>{typeLabel[n.type] ?? n.type}</span>
-                      {n.deck_name && n.deck_id && (
+                      {n.type === 'price' ? (
+                        // Price alert: system notification, no social actor/deck link needed
+                        <span style={{ color: 'var(--text-faint)' }}>{n.note_text ?? 'Price alert'}</span>
+                      ) : (
                         <>
-                          {': '}
-                          <Link href={`/decks/${n.deck_id}`} style={{ color: 'var(--accent)', textDecoration: 'none' }}>
-                            {n.deck_name}
-                          </Link>
+                          <span style={{ fontWeight: 700 }}>{n.actor_name}</span>
+                          {' '}
+                          <span style={{ color: 'var(--text-faint)' }}>{typeLabel[n.type] ?? n.type}</span>
+                          {n.deck_name && (n.deck_slug || n.deck_id) && (
+                            <>
+                              {': '}
+                              <Link
+                                href={n.deck_slug ? `/d/${n.deck_slug}` : `/decks/${n.deck_id}`}
+                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                              >
+                                {n.deck_name}
+                              </Link>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runMigrations } from '@/lib/db/migrations';
 import { getCurrentUser } from '@/lib/auth/session';
 import { priceDeck } from '@/lib/pricing/aggregator';
-import { buildWishlistRequests, buildDeckMissingRequests } from '@/lib/pricing/shopping-list';
+import { buildWishlistRequests, buildDeckMissingRequests, getShopsWithShipping } from '@/lib/pricing/shopping-list';
 
 export async function POST(req: NextRequest) {
   runMigrations();
@@ -30,14 +30,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'source must be "wishlist" or "deck-missing" (with deck_id)' }, { status: 400 });
   }
 
+  const shopMeta = getShopsWithShipping();
+
   if (requests.length === 0) {
     return NextResponse.json({
       card_results: [], best_per_card_total: 0,
-      fewest_shops_basket: [], fewest_shops_total: 0, fewest_shops_count: 0,
+      fewest_shops_basket: [], fewest_shops_total: 0, fewest_shops_shipping: 0, fewest_shops_count: 0,
       not_found_count: 0, as_of: new Date().toISOString(),
     });
   }
 
-  const result = await priceDeck(requests);
+  const result = await priceDeck(requests, shopMeta);
   return NextResponse.json(result);
 }

@@ -71,6 +71,7 @@ export interface Notification {
   type: NotificationType;
   deck_id: string | null;
   deck_name: string | null;
+  deck_slug: string | null;
   comment_id: string | null;
   note_text: string | null;
   read: boolean;
@@ -118,14 +119,15 @@ export function getNotifications(userId: string, limit = 30): Notification[] {
   return (getDb().prepare(`
     SELECT n.id, n.user_id, n.actor_id, n.type, n.deck_id, n.comment_id, n.note_text, n.read, n.created_at,
            u.name AS actor_name,
-           d.name AS deck_name
+           d.name AS deck_name,
+           d.public_slug AS deck_slug
     FROM notifications n
     JOIN users u ON u.id = n.actor_id
     LEFT JOIN decks d ON d.id = n.deck_id
     WHERE n.user_id = ?
     ORDER BY n.created_at DESC
     LIMIT ?
-  `).all(userId, limit) as (Omit<Notification, 'read' | 'actor_name' | 'deck_name'> & { read: number; actor_name: string; deck_name: string | null; note_text: string | null })[]).map(r => ({
+  `).all(userId, limit) as (Omit<Notification, 'read' | 'actor_name' | 'deck_name' | 'deck_slug'> & { read: number; actor_name: string; deck_name: string | null; deck_slug: string | null; note_text: string | null })[]).map(r => ({
     ...r,
     read: !!r.read,
   }));
